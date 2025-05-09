@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+	<AddIn Type="Application">
+		<!--<Name>Application DiplomProject</Name>
+		<Assembly>Diplom_Project.dll</Assembly>
+		<FullClassName>DiplomProject.MainApp</FullClassName>
+		<ClientID>11111111-1111-1111-1111-111111111111</ClientID>
+		<VendorID>KON</VendorID>
+		<VendorDescription>Constructive</VendorDescription>
+		<AddInId>502fe383-2648-4e98-adf8-5e6047f9dc34</AddInId>-->
+
+		<Name>Application Diplom_Project</Name>
+		<FullClassName>Diplom_Project.MainApp</FullClassName>
+		<Text>Hello World</Text>
+		<Description> Hello World Description</Description>
+		<VisibilityMode>AlwaysVisible</VisibilityMode>
+		<Assembly>
+			<!--Your .dll path location-->
+			Diplom_Project.dll
+		</Assembly>
+		<AddInId>502fe383-2648-4e98-adf8-5e6047f9dc34</AddInId>
+		<VendorId>www.aec-tech.net</VendorId>
+		<VendorDescription>www.aec-tech.net</VendorDescription>
+	</AddIn>
+</RevitAddIns>
