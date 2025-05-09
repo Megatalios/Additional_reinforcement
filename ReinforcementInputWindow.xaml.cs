@@ -59,9 +59,51 @@ namespace Diplom_Project
             uiDocument = uidoc;
             document = uiDocument.Document;
 
+            try
+            {
+                // Получаем все элементы типа Level в документе
+                List<Level> allLevels = new FilteredElementCollector(document)
+                    .OfClass(typeof(Level)) // Фильтруем по классу Level
+                    .Cast<Level>() // Приводим найденные элементы к типу Level
+                    .OrderBy(level => level.Elevation) // Опционально: сортируем уровни по высоте
+                    .ToList(); // Преобразуем в список
+
+                // Добавляем имена уровней в ItemsSource ComboBox'а
+                // ItemsSource лучше, чем Items.Add, если вы используете привязку данных,
+                // но для простого списка имен Items.Add тоже работает.
+                // LevelComboBox.ItemsSource = allLevels.Select(level => level.Name).ToList();
+
+                // Добавляем имена уровней в ComboBox
+                foreach (Level level in allLevels)
+                {
+                    LevelComboBox.Items.Add(level.Name);
+                }
+
+                // Опционально: выбрать первый элемент по умолчанию, если список не пуст
+                if (LevelComboBox.Items.Count > 0)
+                {
+                    LevelComboBox.SelectedIndex = 0;
+                }
+
+                // Опционально: загрузить последний выбранный уровень из настроек
+                // string lastLevelName = Properties.Settings.Settings.Default.FlrName;
+                // if (LevelComboBox.Items.Contains(lastLevelName))
+                // {
+                //     LevelComboBox.SelectedItem = lastLevelName;
+                // }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при загрузке списка уровней из Revit: {ex.Message}", "Ошибка Revit API", MessageBoxButton.OK, MessageBoxImage.Error);
+                // Деактивировать ComboBox или кнопку расчета, если уровни не загружены
+                LevelComboBox.IsEnabled = false;
+            }
+
             // Инициализация таблицы DataTable для DataGrid
             ZonesTable = new DataTable();
             InitializeDataTables(); // Метод инициализации структуры таблицы DataTable
+
+
 
             // Изначально кнопки расчета и визуализации неактивны
             CalculateButton.IsEnabled = false;
@@ -233,12 +275,12 @@ namespace Diplom_Project
                 this.IsEnabled = true; // Включаем UI обратно
                 return; // Прерываем выполнение
             }
-
-            string levelName = FlrTextBox.Text;
+            string levelName = LevelComboBox.SelectedItem?.ToString();
+            //string levelName = FlrTextBox.Text;
             // Проверяем, указано ли имя уровня
             if (string.IsNullOrWhiteSpace(levelName))
             {
-                MessageBox.Show("Не указано имя уровня Revit.", "Ошибка ввода", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Не выбан уровень Revit.", "Ошибка ввода", MessageBoxButton.OK, MessageBoxImage.Warning);
                 this.IsEnabled = true; // Включаем UI обратно
                 return; // Прерываем выполнение
             }

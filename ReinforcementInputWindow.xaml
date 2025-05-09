@@ -1,16 +1,4 @@
-﻿<!--<UserControl x:Class="Diplom_Project.ReinforcementInputWindow"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:local="clr-namespace:Diplom_Project"
-             mc:Ignorable="d" 
-             d:DesignHeight="450" d:DesignWidth="800">
-    <Grid>
-            
-    </Grid>
-</UserControl>-->
-<Window x:Class="Diplom_Project.ReinforcementInputWindow"
+﻿<Window x:Class="Diplom_Project.ReinforcementInputWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -49,8 +37,8 @@
                 <CheckBox x:Name="As4Y_CheckBox" Content="As4Y" Margin="10,0,0,0" IsChecked="True"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                <Label Content="Имя уровня Revit:"/>
-                <TextBox x:Name="FlrTextBox" Width="150" Margin="5,0,0,0"/>
+                <Label Content="Уровень Revit:"/>
+                <ComboBox x:Name="LevelComboBox" Width="150" Margin="5,0,0,0"/>
                 <Label Content="Макс. решений:"/>
                 <TextBox x:Name="MaxSolTextBox" Width="50" Margin="5,0,0,0" PreviewTextInput="MaxSolTextBox_PreviewTextInput"/>
             </StackPanel>
@@ -67,4 +55,3 @@
         </StackPanel>
     </Grid>
 </Window>
-
