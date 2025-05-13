@@ -173,6 +173,14 @@ namespace Diplom_Project
             double scaleFactor = 1.0; // Предполагаем, что x,y,z уже в футах или конвертация будет позже
             return new XYZ(x * scaleFactor, y * scaleFactor, z * scaleFactor);
         }
+
+        public XYZ GetXYZ(double scaleFactor)
+        {
+            // !!! Важно: здесь должна быть конвертация из единиц CSV в футы Revit, если они разные !!!
+            // double scaleFactor = UnitUtils.Convert(1.0, DisplayUnitType.DUF_METERS, DisplayUnitType.DUF_FEET); // Пример для метров
+            // Предполагаем, что x,y,z уже в футах или конвертация будет позже
+            return new XYZ(x * scaleFactor, y * scaleFactor, z * scaleFactor);
+        }
     }
 
 
@@ -393,7 +401,7 @@ namespace Diplom_Project
                 // Показываем окно как модальное.
                 // ShowDialog() блокирует основной поток Revit API до закрытия окна,
                 // что позволяет выполнять операции с документом из кода окна.
-                mainWindow.ShowDialog();
+                mainWindow.Show();
 
                 // Результат команды Execute может зависеть от того, как завершилось взаимодействие с окном,
                 // но для простоты вернем Succeeded, если окно показалось без ошибок.
