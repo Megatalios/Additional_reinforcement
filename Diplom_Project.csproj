@@ -56,10 +56,13 @@
   <ItemGroup>
     <Compile Include="MainApp.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RebarConfig.cs" />
     <Compile Include="ReinforcementInputWindow.xaml.cs">
       <DependentUpon>ReinforcementInputWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="Tools.cs" />
+    <Compile Include="Zone.cs" />
+    <Compile Include="ZoneOptimizer.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Diplom_Project.addin" />

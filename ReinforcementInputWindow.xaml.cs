@@ -40,11 +40,8 @@ namespace Diplom_Project // Ваш namespace
 
         // --- Поле для хранения ВСЕХ точек, загруженных из CSV ---
         private List<Additional_Reinforcement_point> allCsvPoints;
-        // -----------------------------------------------------
-
         // Поле для отображения результатов расчета в UI DataGrid
         private DataTable ZonesTable;
-
         // Поля для хранения данных из референсного проекта, которые потребуются для расчета
         // private DataTable DiamStep; // Данные Диаметр-Шаг
         // private DataTable DiamCost; // Данные Диаметр-Цена
@@ -61,14 +58,16 @@ namespace Diplom_Project // Ваш namespace
         private List<List<Additional_Reinforcement_point>> pointsInsideFloorsGrouped;
         // Точки, которые находятся вне плит
         private List<Additional_Reinforcement_point> pointsOutsideFloors;
-        // -------------------------------------------------------------
 
+        private List<ReinforcementSolution> bestSolutions;
+        // -------------------------------------------------------------
         // --- Поля для External Event ---
         private ExternalEvent visualizationEvent;
         private VisualizationHandler visualizationHandler;
-
+        private PlanarVisualizationHandler planarVisualizationHandler;
         private ExternalEvent cleanEvent;
         private CleanHandler cleanHandler;
+        private ExternalEvent planarVisualizationEvent;
         // -----------------------------
 
 
@@ -199,6 +198,13 @@ namespace Diplom_Project // Ваш namespace
 
         }
 
+        public void Dispose()
+        {
+            visualizationEvent?.Dispose();
+            planarVisualizationEvent?.Dispose();
+            cleanEvent?.Dispose();
+        }
+
         /// <summary>
         /// Метод инициализации структуры DataTable для отображения результатов.
         /// </summary>
@@ -317,7 +323,7 @@ namespace Diplom_Project // Ваш namespace
             PlanarButton.IsEnabled = false;
             CancelButton.IsEnabled = false;
             ZonesTable.Clear(); // Очищаем предыдущие результаты в таблице
-            // bestSolutions = null; // Очищаем предыдущие решения (если поле bestSolutions существует)
+            bestSolutions = null; // Очищаем предыдущие решения (если поле bestSolutions существует)
             // Инициализируем список плит пустым списком в начале метода
             floors = new List<Floor>();
             // Списки pointsInsideFloorsGrouped и pointsOutsideFloors инициализируются в конструкторе
@@ -357,11 +363,18 @@ namespace Diplom_Project // Ваш namespace
                 return;
             }
 
+
+
             // Определяем, какие направления армирования выбраны пользователем
             bool useAs1X = As1X_CheckBox.IsChecked.HasValue ? As1X_CheckBox.IsChecked.Value : false;
             bool useAs2X = As2X_CheckBox.IsChecked.HasValue ? As2X_CheckBox.IsChecked.Value : false;
             bool useAs3Y = As3Y_CheckBox.IsChecked.HasValue ? As3Y_CheckBox.IsChecked.Value : false;
             bool useAs4Y = As4Y_CheckBox.IsChecked.HasValue ? As4Y_CheckBox.IsChecked.Value : false;
+
+            double as1xThreshold = useAs1X ? mainFitValue : -1;
+            double as2xThreshold = useAs2X ? mainFitValue : -1;
+            double as3yThreshold = useAs3Y ? mainFitValue : -1;
+            double as4yThreshold = useAs4Y ? mainFitValue : -1;
 
             // Проверяем, выбрано ли хотя бы одно направление
             if (!useAs1X && !useAs2X && !useAs3Y && !useAs4Y)
@@ -440,29 +453,6 @@ namespace Diplom_Project // Ваш namespace
                 // Используем фиксированный коэффициент, если UnitUtils.Convert с DisplayUnitType вызывает ошибки
                 double scaleFactor = METERS_TO_FEET; // Используем определенную константу
 
-                // Если вы уверены, что UnitUtils.Convert с DUT_ префиксом работает в вашей версии API,
-                // можете раскомментировать этот блок и закомментировать строку выше:
-                // try
-                // {
-                //      // Получаем единицы длины документа Revit
-                //      Units projectUnits = document.GetUnits();
-                //      FormatOptions fo = projectUnits.GetFormatOptions(UnitType.UT_Length);
-                //      DisplayUnitType displayUnits = fo.DisplayUnits;
-
-                //      // Конвертируем из метров в футы (единицы Revit API)
-                //      // Используем DUT_METERS и DUT_FEET, если они доступны в вашей версии API
-                //      scaleFactor = UnitUtils.Convert(1.0, DisplayUnitType.DUT_METERS, DisplayUnitType.DUT_FEET);
-
-                //      System.Diagnostics.Debug.WriteLine($"CSV Units Scale Factor (Meters to Feet): {scaleFactor}"); // Логируем коэффициент
-
-                //  }
-                //  catch (Exception ex)
-                //  {
-                //      System.Diagnostics.Debug.WriteLine($"Ошибка при определении или применении коэффициента конвертации единиц: {ex.Message}");
-                //      MessageBox.Show($"Ошибка при определении единиц проекта. Убедитесь, что единицы заданы корректно. Использование масштаба по умолчанию (1:1).", "Предупреждение о единицах", MessageBoxButton.OK, MessageBoxImage.Warning);
-                //      scaleFactor = 1.0; // Используем масштаб 1:1 как запасной вариант, если конвертация не удалась
-                //  }
-
 
                 // 3.4. Выполняем геометрическую фильтрацию и привязку точек к плитам
                 // Списки pointsInsideFloorsGrouped и pointsOutsideFloors инициализируются в конструкторе
@@ -485,7 +475,8 @@ namespace Diplom_Project // Ваш namespace
                 {
                     // Конвертируем координаты точки из CSV в футы Revit API
                     // Используем метод GetXYZ класса точки
-                    XYZ pointXYZ_ft = pointData.GetXYZ(scaleFactor);
+                    //XYZ pointXYZ_ft = pointData.GetXYZ(scaleFactor);
+                    XYZ pointXYZ_ft = pointData.GetXYZ();
 
                     bool foundSlab = false; // Флаг для определения, найдена ли плита для точки
 
@@ -546,11 +537,58 @@ namespace Diplom_Project // Ваш namespace
 
                         // Если точка прошла все проверки, она находится внутри этой плиты
                         // Добавляем отфильтрованную и привязанную точку в список для соответствующей плиты
-                        pointsInsideFloorsGrouped[i].Add(pointData); // Добавляем Additional_Reinforcement_point сюда
-                        foundSlab = true; // Устанавливаем флаг, что плита найдена
+                        //pointsInsideFloorsGrouped[i].Add(pointData); // Добавляем Additional_Reinforcement_point сюда
+                        //foundSlab = true; // Устанавливаем флаг, что плита найдена
 
-                        // Точка найдена в одной плите, переходим к следующей отфильтрованной точке
-                        break; // Точка может принадлежать только одной плите на одном уровне
+                        //// Точка найдена в одной плите, переходим к следующей отфильтрованной точке
+                        //break; // Точка может принадлежать только одной плите на одном уровне
+
+                        Level floorLevel = document.GetElement(floor.LevelId) as Level;
+                        if (floorLevel == null) continue; // Если не удалось получить уровень, пропускаем плиту
+
+                        double levelElevation_ft = floorLevel.Elevation; // Отметка уровня плиты в футах
+
+                        // Получаем толщину плиты. Это может быть параметр "Structural Depth" или "Thickness".
+                        // Название параметра может варьироваться. Нужно найти правильный параметр.
+                        // Пример: Поиск параметра по BuiltInParameter
+                        Parameter thicknessParam = floor.get_Parameter(BuiltInParameter.STRUCTURAL_FLOOR_CORE_THICKNESS); // Пример для структурной толщины
+                        if (thicknessParam == null)
+                        {
+                            // Если структурная толщина не найдена, попробуйте другие параметры или пропустите проверку Z
+                            System.Diagnostics.Debug.WriteLine($"Не найден параметр толщины для плиты {floor.Id}. Проверка Z может быть неточной.");
+                            // Для простоты, пока пропустим проверку Z, если толщина не найдена.
+                            // В реальном проекте нужно найти надежный способ получения толщины.
+                            // continue; // Или можно пропустить эту плиту, если толщина критична
+                        }
+
+                        double floorThickness_ft = (thicknessParam != null) ? thicknessParam.AsDouble() : 0; // Толщина в футах
+
+                        // Определяем диапазон Z-координат для плиты
+                        // Нижняя грань плиты: levelElevation_ft - floorThickness_ft
+                        // Верхняя грань плиты: levelElevation_ft
+                        double minZ_floor_ft = levelElevation_ft - floorThickness_ft;
+                        double maxZ_floor_ft = levelElevation_ft;
+
+                        // Проверяем, находится ли Z-координата точки в пределах Z-диапазона плиты
+                        // Используем небольшой допуск для сравнения чисел с плавающей точкой
+                        double zTolerance = 1e-6; // Допуск в футах
+                        if (pointXYZ_ft.Z >= minZ_floor_ft - zTolerance && pointXYZ_ft.Z <= maxZ_floor_ft + zTolerance)
+                        {
+                            // Если точка находится внутри внешнего контура (XY), вне отверстий (XY) И в пределах Z-диапазона плиты (Z)
+                            // Добавляем отфильтрованную и привязанную точку в список для соответствующей плиты
+                            pointsInsideFloorsGrouped[i].Add(pointData); // Добавляем Additional_Reinforcement_point сюда
+                            foundSlab = true; // Устанавливаем флаг, что плита найдена
+
+                            // Точка найдена в одной плите, переходим к следующей отфильтрованной точке
+                            break; // Точка может принадлежать только одной плите на одном уровне
+                        }
+                        else
+                        {
+                            // Если точка находится по XY в пределах плиты, но не по Z,
+                            // она не принадлежит этой плите. Продолжаем проверять другие плиты (если есть).
+                            System.Diagnostics.Debug.WriteLine($"Точка {pointData.Number} (Z={pointXYZ_ft.Z:F3} футов) находится вне Z-диапазона плиты {floor.Id} ({minZ_floor_ft:F3} - {maxZ_floor_ft:F3} футов).");
+                        }
+                        // === КОНЕЦ ДОБАВЛЕННОЙ ПРОВЕРКИ ПО Z ===
                     }
 
                     // Если после проверки всех плит точка не была добавлена ни в один список, значит, она вне плит
@@ -564,6 +602,7 @@ namespace Diplom_Project // Ваш namespace
                 // pointsInsideFloorsGrouped.Any(sn => sn.Count > 0) проверяет, есть ли хотя бы в одном списке внутри pointsInsideFloorsGrouped элементы
                 int totalPointsInsideFloors = pointsInsideFloorsGrouped.Sum(sn => sn.Count);
                 int totalPointsOutsideFloors = pointsOutsideFloors.Count;
+                //var nodesForOptimizer = new List<List<Node>>();
 
                 if (totalPointsInsideFloors == 0 && totalPointsOutsideFloors == 0)
                 {
@@ -583,21 +622,7 @@ namespace Diplom_Project // Ваш namespace
                         CancelButton.IsEnabled = true; // Отменить виз.
                     }
                 }
-
-
-                // === 4. Преобразование Additional_Reinforcement_point в Node для каждой плиты ===
-                // Этот шаг готовит данные для ReinforcementOptimizer
-                // В этом цикле мы пройдемся по pointsInsideFloorsGrouped и создадим соответствующие объекты Node
                 var nodesForOptimizer = new List<List<Node>>();
-
-                // Определяем пороговые значения основного армирования для каждого направления (-1 если не выбрано)
-                // Эти значения нужны для создания Node, так как Optimizer использует их для расчета requiredAs
-                double as1xThreshold = useAs1X ? mainFitValue : -1;
-                double as2xThreshold = useAs2X ? mainFitValue : -1;
-                double as3yThreshold = useAs3Y ? mainFitValue : -1;
-                double as4yThreshold = useAs4Y ? mainFitValue : -1;
-
-
                 for (int i = 0; i < pointsInsideFloorsGrouped.Count; i++)
                 {
                     List<Additional_Reinforcement_point> pointsOnThisSlab = pointsInsideFloorsGrouped[i]; // Теперь это List<Additional_Reinforcement_point>
@@ -607,6 +632,7 @@ namespace Diplom_Project // Ваш namespace
                             Type = p.Type,
                             Number = p.Number,
                             // Координаты в Node должны быть в футах, т.к. с ними работает Optimizer
+                            // Использовать p.X, p.Y, p.Z (заглавные буквы)
                             X = p.x * scaleFactor,
                             Y = p.y * scaleFactor,
                             ZCenter = p.z * scaleFactor,
@@ -629,54 +655,191 @@ namespace Diplom_Project // Ваш namespace
                 // Проверяем, есть ли узлы для оптимизации после привязки и преобразования
                 if (!nodesForOptimizer.Any(nl => nl.Count > 0))
                 {
-                    // Это сообщение уже покрыто проверкой totalPointsInsideFloors == 0
-                    // MessageBox.Show($"После привязки к плитам и подготовки данных не осталось узлов для расчета.", "Расчет", MessageBoxButton.OK, MessageBoxImage.Information);
-                    // this.IsEnabled = true;
-                    // return;
+                    // Если после преобразования в Node нет узлов для оптимизации,
+                    // выводим сообщение и завершаем работу.
+                    MessageBox.Show($"После привязки к плитам и преобразования данных не осталось узлов для расчета.", "Расчет", MessageBoxButton.OK, MessageBoxImage.Information);
+                    this.IsEnabled = true;
+                    return;
+                }
+                List<CurveLoop> openings = new List<CurveLoop>();
+                CurveLoop plateBoundary = null;
+
+                // Собираем контуры отверстий и внешний контур для первой плиты (для примера)
+                if (floors.Count > 0)
+                {
+                    Floor firstFloor = floors.First();
+                    Options geomOptions = new Options();
+                    geomOptions.ComputeReferences = true;
+                    GeometryElement geomElem = firstFloor.get_Geometry(geomOptions);
+                    PlanarFace topFace = null;
+
+                    foreach (GeometryObject geomObj in geomElem)
+                    {
+                        if (geomObj is Solid solid)
+                        {
+                            foreach (Face face in solid.Faces)
+                            {
+                                if (face is PlanarFace planarFace && planarFace.FaceNormal.IsAlmostEqualTo(XYZ.BasisZ))
+                                {
+                                    topFace = planarFace;
+                                    break;
+                                }
+                            }
+                        }
+                        if (topFace != null) break;
+                    }
+
+                    if (topFace != null)
+                    {
+                        IList<CurveLoop> boundaryLoops = topFace.GetEdgesAsCurveLoops();
+                        if (boundaryLoops.Count > 0)
+                        {
+                            plateBoundary = boundaryLoops[0]; // Первый контур - внешний
+                            for (int i = 1; i < boundaryLoops.Count; i++)
+                            {
+                                openings.Add(boundaryLoops[i]); // Остальные - отверстия
+                            }
+                        }
+                    }
+                }
+
+                // Проверяем, получена ли геометрия плиты
+                if (plateBoundary == null)
+                {
+                    MessageBox.Show("Не удалось получить геометрию плиты для оптимизации.", "Ошибка геометрии", MessageBoxButton.OK, MessageBoxImage.Error);
+                    this.IsEnabled = true;
+                    return;
+                }
+
+                List<RebarConfig> availableRebars = new List<RebarConfig>();
+
+
+                // TODO: Реализовать загрузку данных об арматуре из JSON/CSV и преобразование в List<RebarConfig>
+                // Пример (если у вас есть DataTable DiamStep и DiamCost):
+                // try
+                // {
+                //     availableRebars = DiamStep.AsEnumerable()
+                //         .GroupBy(r => Convert.ToDouble(r["Diam"])) // Группируем по диаметру
+                //         .Select(g => new RebarConfig // Для каждой группы создаем RebarConfig
+                //         {
+                //             Name = $"D{g.Key}", // Пример имени
+                //             Diameter = g.Key,
+                //             Spacing = g.First()["Step"] != DBNull.Value ? Convert.ToDouble(g.First()["Step"]) : 0, // Берем первый шаг для диаметра (или нужно выбрать лучший?)
+                //             // TODO: Как определить BearingCapacity для RebarConfig из ваших данных?
+                //             // BearingCapacity = ??? // Нужно найти или рассчитать
+                //             CostPerMeter = DiamCost.AsEnumerable()
+                //                 .FirstOrDefault(r => Convert.ToDouble(r["Diam"]) == g.Key)?["Cost"] != DBNull.Value
+                //                 ? Convert.ToDouble(DiamCost.AsEnumerable()
+                //                     .First(r => Convert.ToDouble(r["Diam"]) == g.Key)["Cost"]) : 0,
+                //         })
+                //         .Where(r => r.CostPerMeter > 0 && r.Spacing > 0) // Фильтруем некорректные данные
+                //         .ToList();
+                // }
+                // catch (Exception ex)
+                // {
+                //     MessageBox.Show($"Ошибка при подготовке данных об арматуре: {ex.Message}", "Ошибка данных", MessageBoxButton.OK, MessageBoxImage.Error);
+                //     this.IsEnabled = true;
+                //     return;
+                // }
+                string rebarCsvFilePath = "C:\\Users\\kamil\\Desktop\\rebars.csv";
+                // Вызываем новый метод для загрузки конфигураций арматуры
+                string rebarLoadingError;
+                availableRebars = LoadRebarConfigsFromCsv(rebarCsvFilePath, out rebarLoadingError);
+
+                if (!string.IsNullOrEmpty(rebarLoadingError))
+                {
+                    MessageBox.Show($"Ошибка при загрузке данных об арматуре:\n{rebarLoadingError}", "Ошибка загрузки данных", MessageBoxButton.OK, MessageBoxImage.Error);
+                    this.IsEnabled = true;
+                    return;
+                }
+
+                // Проверяем, что данные об арматуре загружены
+                if (availableRebars == null || availableRebars.Count == 0)
+                {
+                    MessageBox.Show("Данные о доступной арматуре не загружены или пусты.", "Ошибка данных", MessageBoxButton.OK, MessageBoxImage.Error);
+                    this.IsEnabled = true;
+                    return;
                 }
 
 
-                // === 5. Получаем информацию об отверстиях для всех найденных плит ===
-                // ReinforcementOptimizer.GetOpeningsFromRevit - этот метод, вероятно, должен быть доступен
-                // Он должен принимать List<Floor> и возвращать List<List<XYZ>> или аналогичную структуру для отверстий
-                // Этот метод также должен выполняться в контексте Revit API, если он работает с геометрией
-                // Если он просто преобразует уже полученные CurveLoop, то может работать и в фоне.
-                var openings = ReinforcementOptimizer.GetOpeningsFromRevit(floors); // Получаем отверстия
+                // === 7. Запускаем расчетный алгоритм (ZoneOptimizer) ===
+                // Этот шаг может быть длительным и, возможно, должен выполняться в фоновом потоке (Task.Run).
+                // Сам ZoneOptimizer не должен напрямую работать с Revit API.
 
-
-                // === 6. Запускаем расчетный алгоритм (ReinforcementOptimizer) ===
-                // Этот шаг может быть длительным и, возможно, должен выполняться в фоновом потоке,
-                // но сам ReinforcementOptimizer не должен напрямую работать с Revit API.
-                // Если ReinforcementOptimizer.FindBestSolutions не вызывает API, его можно обернуть в Task.Run.
-                // Вам потребуется адаптировать или реализовать класс ReinforcementOptimizer и его зависимости (Node, ReinforcementSolution, RebarConfig).
-
-                // Создаем экземпляр ReinforcementOptimizer
-                // Вам нужно будет передать ему необходимые данные (отверстия, параметры арматуры, настройки)
-                var optimizer = new ReinforcementOptimizer // Используем класс ReinforcementOptimizer, определение которого добавлено ниже
+                // Создаем экземпляр ZoneOptimizer
+                ZoneOptimizer optimizer = new ZoneOptimizer
                 {
-                    Openings = openings, // Передаем информацию об отверстиях (теперь свойство Openings существует)
-                    NumOfSol = maxSolutions, // Максимальное число решений
-                                             // Передаем ПОРОГОВЫЕ значения основного армирования по выбранным направлениям
+                    AvailableRebars = availableRebars, // Передаем доступную арматуру
+                    Openings = openings, // Передаем информацию об отверстиях
+                    PlateBoundary = plateBoundary, // TODO: Получить внешний контур плиты и передать сюда
+                    MaxSolutions = maxSolutions, // Максимальное число решений из UI
+                                                 // Передаем ПОРОГОВЫЕ значения основного армирования по выбранным направлениям
+                                                 // Эти значения используются в ZoneOptimizer для определения требуемой нагрузки
                     BasicReinforcement = new[] { as1xThreshold, as2xThreshold, as3yThreshold, as4yThreshold },
-                    // Стандартные длины стержней и доступные конфигурации арматуры (диаметр-шаг-цена)
-                    // Эти данные должны быть загружены из JSON при открытии окна (с помощью DataFile)
-                    // Вам нужно будет адаптировать загрузку JSON и преобразование в нужные структуры (List<double> и List<RebarConfig>)
-                    // StandardLengths = DataFile.StandardLengths; // Пример использования DataFile
-                    // AvailableRebars = DataFile.AvailableRebars; // Пример использования DataFile
+                    // TODO: Передать стандартные длины стержней, если они используются в расчете стоимости
+                    // StandardLengths = ...
                 };
 
                 // Вызываем основной метод оптимизатора для поиска лучших решений
-                // Передаем списки узлов, сгруппированные по плитам, количество решений и сами плиты
-                // bestSolutions = await Task.Run(() => optimizer.FindBestSolutions(nodesForOptimizer, maxSolutions, floors));
-                // optimizer = null; // Очищаем оптимизатор после использования
+                // Передаем списки узлов, сгруппированные по плитам.
+                // Этот вызов может быть обернут в Task.Run, если он длительный и не использует API.
+                // Предполагаем, что FindBestReinforcementSolutions не вызывает API напрямую.
+                List<ReinforcementSolution> bestSolutions = await Task.Run(() => optimizer.FindBestReinforcementSolutions(nodesForOptimizer.FirstOrDefault(), floors.FirstOrDefault())); // TODO: Передавать нужную плиту или адаптировать FindBestReinforcementSolutions для работы со списком плит
 
-                // === 7. Обработка и отображение результатов (будет реализована далее) ===
-                // - Проверка, были ли найдены решения
-                // - Заполнение ZonesTable данными из полученных решений bestSolutions
-                // - Активация кнопок ApplyButton, PlanarButton, CancelButton
+                // Очищаем оптимизатор после использования (опционально)
+                optimizer = null;
 
-                // MessageBox.Show($"Геометрическая фильтрация и подготовка узлов завершена. Найдено {totalPointsInsideFloors} узлов внутри плит. Дальнейшая логика расчета и оптимизации будет реализована.", "Следующий шаг", MessageBoxButton.OK, MessageBoxImage.Information);
 
+                // === 8. Обработка и отображение результатов ===
+
+                // Проверяем, были ли найдены решения
+                if (bestSolutions == null || bestSolutions.Count == 0)
+                {
+                    MessageBox.Show("Алгоритм оптимизации не нашел подходящих решений по зонированию.", "Результат расчета", MessageBoxButton.OK, MessageBoxImage.Information);
+                    // Деактивируем кнопки визуализации, если решений нет
+                    ApplyButton.IsEnabled = false;
+                    PlanarButton.IsEnabled = false;
+                    CancelButton.IsEnabled = false;
+                }
+                else
+                {
+                    // Заполняем ZonesTable данными из полученных решений bestSolutions
+                    // Сначала очищаем таблицу
+                    ZonesTable.Clear();
+
+                    // Итерируемся по каждому найденному решению
+                    foreach (var solution in bestSolutions)
+                    {
+                        // Создаем новую строку в DataTable
+                        DataRow row = ZonesTable.NewRow();
+
+                        // Заполняем столбцы данными из ReinforcementSolution
+                        // TODO: Убедитесь, что свойства ReinforcementSolution и ZoneSolution соответствуют колонкам ZonesTable
+                        row["Num"] = solution.Num; // Порядковый номер решения
+                        row["Count"] = solution.Zones.Count; // Количество зон в решении
+                        row["TotalCost"] = solution.TotalCost; // Общая стоимость
+                        row["TotalLength"] = solution.TotalLength; // Общая длина
+                        // TODO: Добавить информацию об уровне, если она нужна в таблице
+                        // row["Level"] = levelName; // Или имя уровня из плиты, если оптимизация по одной плите
+
+                        // Добавляем заполненную строку в DataTable
+                        ZonesTable.Rows.Add(row);
+                    }
+
+                    // Активируем кнопки визуализации, если найдены решения
+                    ApplyButton.IsEnabled = true;
+                    PlanarButton.IsEnabled = true; // Активируем кнопку 2D визуализации
+                    CancelButton.IsEnabled = true; // Активируем кнопку отмены визуализации
+
+                    MessageBox.Show($"Расчет завершен. Найдено {bestSolutions.Count} лучших решений.", "Расчет завершен", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+
+                // TODO: Сохранить bestSolutions в поле класса, чтобы использовать их для визуализации
+                this.bestSolutions = bestSolutions; // Предполагаем, что поле bestSolutions определено в ReinforcementInputWindow
+
+
+
+                
 
             }
             catch (Exception ex)
@@ -826,7 +989,7 @@ namespace Diplom_Project // Ваш namespace
         /// <param name="point">Проверяемая точка (в тех же единицах, что и контур - футы Revit API).</param>
         /// <returns>True, если точка находится внутри контура, иначе False.</returns>
         // Этот метод должен быть статическим, чтобы его можно было вызвать без создания экземпляра класса ReinforcementInputWindow
-        private static bool IsPointInsideCurveLoop(CurveLoop loop, XYZ point)
+        public static bool IsPointInsideCurveLoop(CurveLoop loop, XYZ point)
         {
             // Реализация алгоритма "ray casting" (бросание луча) или аналогичного.
             // Проверяем, сколько раз луч из точки пересекает ребра полигона.
@@ -906,6 +1069,109 @@ namespace Diplom_Project // Ваш namespace
             // Если количество пересечений нечетное, точка находится внутри полигона.
             return (crossings % 2 == 1);
         }
+
+
+        /// <summary>
+        /// Читает конфигурации арматуры из указанного CSV файла.
+        /// Формат: Название арматуры;Диаметр (мм);Стоимость за 1 м (руб);Шаг армирования (мм);Выдерживаемая нагрузка (кН/м?)
+        /// Разделитель: точка с запятой (;)
+        /// Десятичный разделитель: запятая (,)
+        /// </summary>
+        /// <param name="filePath">Путь к CSV файлу с данными об арматуре.</param>
+        /// <param name="error">Выходной параметр для сообщения об ошибках парсинга строк.</param>
+        /// <returns>Список объектов RebarConfig или null при критической ошибке файла.</returns>
+        private static List<RebarConfig> LoadRebarConfigsFromCsv(string filePath, out string error)
+        {
+            error = ""; // Инициализируем сообщение об ошибках
+            List<RebarConfig> rebarConfigs = new List<RebarConfig>();
+            StringBuilder errorBuilder = new StringBuilder();
+            int lineNumber = 0;
+
+            // Используем CultureInfo.InvariantCulture для парсинга чисел, чтобы избежать проблем с локальными настройками
+            // Если в CSV используется запятая как десятичный разделитель, нужно использовать CultureInfo с соответствующим NumberFormat
+            // Например, для русского формата с запятой: new CultureInfo("ru-RU")
+            // Или создать NumberFormatInfo с нужным DecimalSeparator
+            NumberFormatInfo nfi = new NumberFormatInfo
+            {
+                NumberDecimalSeparator = "," // Указываем, что десятичный разделитель - запятая
+            };
+
+
+            try
+            {
+                using (StreamReader reader = new StreamReader(filePath, Encoding.UTF8)) // Указываем кодировку UTF8
+                {
+                    string headerLine = reader.ReadLine(); // Пропускаем заголовок
+                    lineNumber++;
+
+                    while (!reader.EndOfStream)
+                    {
+                        string line = reader.ReadLine();
+                        lineNumber++;
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+
+                        string[] values = line.Split(';'); // Разделитель - точка с запятой
+
+                        // Ожидаемый формат: Название арматуры;Диаметр (мм);Стоимость за 1 м (руб);Шаг армирования (мм);Выдерживаемая нагрузка (кН/м?)
+                        // Проверяем количество столбцов (ожидаем 5)
+                        if (values.Length < 5)
+                        {
+                            errorBuilder.AppendLine($"Строка {lineNumber}: Недостаточно столбцов ({values.Length}). Ожидается 5. Пропущена.");
+                            continue;
+                        }
+
+                        try
+                        {
+                            string name = values[0].Trim();
+                            // Парсим числовые значения, используя NumberFormatInfo с запятой как разделителем
+                            double diameter = double.Parse(values[1].Trim(), nfi);
+                            double costPerMeter = double.Parse(values[2].Trim(), nfi);
+                            double spacing = double.Parse(values[3].Trim(), nfi);
+                            double bearingCapacity = double.Parse(values[4].Trim(), nfi);
+
+                            // Создаем новый объект RebarConfig и добавляем его в список
+                            rebarConfigs.Add(new RebarConfig
+                            {
+                                Name = name,
+                                Diameter = diameter,
+                                CostPerMeter = costPerMeter,
+                                Spacing = spacing,
+                                BearingCapacity = bearingCapacity
+                            });
+                        }
+                        catch (FormatException)
+                        {
+                            errorBuilder.AppendLine($"Строка {lineNumber}: Ошибка парсинга числовых данных. Пропущена.");
+                        }
+                        catch (IndexOutOfRangeException)
+                        {
+                            errorBuilder.AppendLine($"Строка {lineNumber}: Ошибка доступа к столбцу. Пропущена.");
+                        }
+                        catch (Exception ex)
+                        {
+                            errorBuilder.AppendLine($"Строка {lineNumber}: Неизвестная ошибка при парсинге: {ex.Message}. Пропущена.");
+                        }
+                    }
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                // Не показываем MessageBox здесь, чтобы не блокировать UI поток.
+                // Ошибка будет возвращена через выходной параметр.
+                error = $"Файл арматуры не найден: {filePath}";
+                return null; // Критическая ошибка
+            }
+            catch (Exception ex)
+            {
+                // Не показываем MessageBox здесь.
+                error = $"Произошла ошибка при чтении файла арматуры CSV: {ex.Message}";
+                return null; // Критическая ошибка
+            }
+
+            error = errorBuilder.ToString(); // Сохраняем накопленные ошибки парсинга строк
+            return rebarConfigs; // Возвращаем список прочитанных конфигураций
+        }
+
 
 
     } // Конец класса ReinforcementInputWindow
@@ -993,12 +1259,12 @@ namespace Diplom_Project // Ваш namespace
     /// <summary>
     /// Скелет класса для представления конфигурации арматуры (диаметр, шаги, цена).
     /// </summary>
-    public class RebarConfig
-    {
-        public int Diameter { get; set; } // Диаметр
-        public List<double> AvailableSpacings { get; set; } // Список доступных шагов для этого диаметра
-        public double PricePerMeter { get; set; } // Цена за метр
-    }
+    //public class RebarConfig
+    //{
+    //    public int Diameter { get; set; } // Диаметр
+    //    public List<double> AvailableSpacings { get; set; } // Список доступных шагов для этого диаметра
+    //    public double PricePerMeter { get; set; } // Цена за метр
+    //}
 
 
     /// <summary>
@@ -1176,15 +1442,15 @@ namespace Diplom_Project // Ваш namespace
             // Эта логика должна выполняться внутри транзакции
             using (Transaction trans = new Transaction(doc, "Visualize Points"))
             {
-                TaskDialog.Show("Визуализация", "Начало транзакции.");
+                //TaskDialog.Show("Визуализация", "Начало транзакции.");
                 trans.Start();
-                TaskDialog.Show("Визуализация", "Транзакция начата.");
+                //TaskDialog.Show("Визуализация", "Транзакция начата.");
                 try
                 {
                     // Получаем ElementId для категории "Обобщенные модели" (Generic Models)
                     // В этой категории удобно создавать DirectShape
                     ElementId modelCategoryId = new ElementId(BuiltInCategory.OST_GenericModel);
-                    TaskDialog.Show("Визуализация", $"Получен ID категории Обобщенные модели: {modelCategoryId.IntegerValue}");
+                    //TaskDialog.Show("Визуализация", $"Получен ID категории Обобщенные модели: {modelCategoryId.IntegerValue}");
 
                     // Попытка найти или создать материалы для визуализации
                     Material materialInside = FindOrCreateMaterial(doc, "Material_InsideFloors", new Autodesk.Revit.DB.Color(0, 0, 255)); // Синий
@@ -1195,12 +1461,12 @@ namespace Diplom_Project // Ваш namespace
                     ElementId materialOutsideId = materialOutside != null ? materialOutside.Id : ElementId.InvalidElementId;
                     //SolidOptions solidOptions = new SolidOptions(GeometryPrecisionLevels.Medium);
 
-                    TaskDialog.Show("Визуализация", "SolidOptions созданы.");
+                    //TaskDialog.Show("Визуализация", "SolidOptions созданы.");
 
                     // Визуализация точек внутри плит (например, синим цветом)
                     if (PointsInsideFloors != null)
                     {
-                        TaskDialog.Show("Визуализация", $"Найдено групп точек внутри плит: {PointsInsideFloors.Count}");
+                        //TaskDialog.Show("Визуализация", $"Найдено групп точек внутри плит: {PointsInsideFloors.Count}");
                         int pointCountInside = 0;
                         // Создаем SolidOptions для точек внутри плит, используя ID материала и InvalidElementId для графического стиля
                         SolidOptions solidOptionsInside = new SolidOptions(materialInsideId, graphicsStyleId);
@@ -1335,129 +1601,129 @@ namespace Diplom_Project // Ваш namespace
                     }
 
                     // Визуализация точек вне плит (например, красным цветом)
-                    if (PointsOutsideFloors != null)
-                    {
-                        TaskDialog.Show("Визуализация", $"Найдено точек вне плит: {PointsOutsideFloors.Count}");
-                        int pointCountOutside = 0;
-                        //foreach (var pointData in PointsOutsideFloors)
-                        //{
-                        //    // Получаем координаты точки в футах Revit API
-                        //    XYZ pointXYZ_ft = pointData.GetXYZ(ReinforcementInputWindow.METERS_TO_FEET);
+                    //if (PointsOutsideFloors != null)
+                    //{
+                    //    TaskDialog.Show("Визуализация", $"Найдено точек вне плит: {PointsOutsideFloors.Count}");
+                    //    int pointCountOutside = 0;
+                    //    //foreach (var pointData in PointsOutsideFloors)
+                    //    //{
+                    //    //    // Получаем координаты точки в футах Revit API
+                    //    //    XYZ pointXYZ_ft = pointData.GetXYZ(ReinforcementInputWindow.METERS_TO_FEET);
 
-                        //    // Создаем сферу как геометрию для DirectShape
-                        //    double sphereRadius = 0.1;
-                        //    Sphere sphere = Sphere.Create(pointXYZ_ft, sphereRadius);
-                        //    List<GeometryObject> geometryObjects = new List<GeometryObject> { sphere };
+                    //    //    // Создаем сферу как геометрию для DirectShape
+                    //    //    double sphereRadius = 0.1;
+                    //    //    Sphere sphere = Sphere.Create(pointXYZ_ft, sphereRadius);
+                    //    //    List<GeometryObject> geometryObjects = new List<GeometryObject> { sphere };
 
-                        //    // Создаем DirectShape
-                        //    DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
-                        //    ds.SetShape(geometryObjects);
-                        //    ds.Name = $"Point_{pointData.Number}_Outside"; // Присваиваем имя для идентификации
+                    //    //    // Создаем DirectShape
+                    //    //    DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
+                    //    //    ds.SetShape(geometryObjects);
+                    //    //    ds.Name = $"Point_{pointData.Number}_Outside"; // Присваиваем имя для идентификации
 
-                        //    // Назначаем материал, если он найден или создан
-                        //    if (materialOutside != null)
-                        //    {
-                        //        ds.SetMaterialIds(new List<ElementId> { materialOutside.Id });
-                        //    }
-                        //}
-                        SolidOptions solidOptionsOutside = new SolidOptions(materialOutsideId, graphicsStyleId);
+                    //    //    // Назначаем материал, если он найден или создан
+                    //    //    if (materialOutside != null)
+                    //    //    {
+                    //    //        ds.SetMaterialIds(new List<ElementId> { materialOutside.Id });
+                    //    //    }
+                    //    //}
+                    //    SolidOptions solidOptionsOutside = new SolidOptions(materialOutsideId, graphicsStyleId);
 
-                        foreach (var pointData in PointsOutsideFloors)
-                        {
-                            pointCountOutside++;
-                            // Получаем координаты точки в футах Revit API
-                            XYZ pointXYZ_ft = pointData.GetXYZ();
+                    //    foreach (var pointData in PointsOutsideFloors)
+                    //    {
+                    //        pointCountOutside++;
+                    //        // Получаем координаты точки в футах Revit API
+                    //        XYZ pointXYZ_ft = pointData.GetXYZ();
 
-                            // === Создание простой геометрии для визуализации (вместо Sphere) ===
-                            List<GeometryObject> geometryObjects = new List<GeometryObject>();
-                            double size = 1.0; // Размер элемента
+                    //        // === Создание простой геометрии для визуализации (вместо Sphere) ===
+                    //        List<GeometryObject> geometryObjects = new List<GeometryObject>();
+                    //        double size = 1.0; // Размер элемента
 
-                            try
-                            {
-                                // Создаем BoundingBoxXYZ вокруг точки
-                                BoundingBoxXYZ bbox = new BoundingBoxXYZ();
-                                bbox.Min = pointXYZ_ft - new XYZ(size / 2, size / 2, size / 2);
-                                bbox.Max = pointXYZ_ft + new XYZ(size / 2, size / 2, size / 2);
+                    //        try
+                    //        {
+                    //            // Создаем BoundingBoxXYZ вокруг точки
+                    //            BoundingBoxXYZ bbox = new BoundingBoxXYZ();
+                    //            bbox.Min = pointXYZ_ft - new XYZ(size / 2, size / 2, size / 2);
+                    //            bbox.Max = pointXYZ_ft + new XYZ(size / 2, size / 2, size / 2);
 
-                                // Создаем Solid из BoundingBoxXYZ
-                                CurveLoop baseLoop = new CurveLoop();
-                                XYZ p0 = new XYZ(bbox.Min.X, bbox.Min.Y, bbox.Min.Z);
-                                XYZ p1 = new XYZ(bbox.Max.X, bbox.Min.Y, bbox.Min.Z);
-                                XYZ p2 = new XYZ(bbox.Max.X, bbox.Max.Y, bbox.Min.Z);
-                                XYZ p3 = new XYZ(bbox.Min.X, bbox.Max.Y, bbox.Min.Z);
+                    //            // Создаем Solid из BoundingBoxXYZ
+                    //            CurveLoop baseLoop = new CurveLoop();
+                    //            XYZ p0 = new XYZ(bbox.Min.X, bbox.Min.Y, bbox.Min.Z);
+                    //            XYZ p1 = new XYZ(bbox.Max.X, bbox.Min.Y, bbox.Min.Z);
+                    //            XYZ p2 = new XYZ(bbox.Max.X, bbox.Max.Y, bbox.Min.Z);
+                    //            XYZ p3 = new XYZ(bbox.Min.X, bbox.Max.Y, bbox.Min.Z);
 
-                                baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p0, p1));
-                                baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p1, p2));
-                                baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p2, p3));
-                                baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p3, p0));
+                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p0, p1));
+                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p1, p2));
+                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p2, p3));
+                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p3, p0));
 
-                                List<CurveLoop> loops = new List<CurveLoop> { baseLoop };
+                    //            List<CurveLoop> loops = new List<CurveLoop> { baseLoop };
 
-                                XYZ extrusionDir = new XYZ(0, 0, size);
-                                double extrusionDist = size;
-                                Solid solid = GeometryCreationUtilities.CreateExtrusionGeometry(loops, extrusionDir, extrusionDist, solidOptionsOutside);
+                    //            XYZ extrusionDir = new XYZ(0, 0, size);
+                    //            double extrusionDist = size;
+                    //            Solid solid = GeometryCreationUtilities.CreateExtrusionGeometry(loops, extrusionDir, extrusionDist, solidOptionsOutside);
 
-                                if (solid != null && solid.Volume > 0)
-                                {
-                                    geometryObjects.Add(solid);
-                                }
-                                else
-                                {
-                                    geometryObjects.Add(Autodesk.Revit.DB.Point.Create(pointXYZ_ft));
-                                }
-                            }
-                            catch (Exception geomEx)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Ошибка создания геометрии для точки {pointData.Number}: {geomEx.Message}");
-                                TaskDialog.Show("Ошибка геометрии", $"Ошибка создания геометрии для точки {pointData.Number}: {geomEx.Message}");
-                                //continue; // Пропускаем текущую точку
-                                geometryObjects = new List<GeometryObject>();
-                            }
+                    //            if (solid != null && solid.Volume > 0)
+                    //            {
+                    //                geometryObjects.Add(solid);
+                    //            }
+                    //            else
+                    //            {
+                    //                geometryObjects.Add(Autodesk.Revit.DB.Point.Create(pointXYZ_ft));
+                    //            }
+                    //        }
+                    //        catch (Exception geomEx)
+                    //        {
+                    //            System.Diagnostics.Debug.WriteLine($"Ошибка создания геометрии для точки {pointData.Number}: {geomEx.Message}");
+                    //            TaskDialog.Show("Ошибка геометрии", $"Ошибка создания геометрии для точки {pointData.Number}: {geomEx.Message}");
+                    //            //continue; // Пропускаем текущую точку
+                    //            geometryObjects = new List<GeometryObject>();
+                    //        }
 
-                            if (geometryObjects.Count == 0)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Не удалось создать геометрию для точки {pointData.Number}. Пропускаем.");
-                                //continue;
-                            }
+                    //        if (geometryObjects.Count == 0)
+                    //        {
+                    //            System.Diagnostics.Debug.WriteLine($"Не удалось создать геометрию для точки {pointData.Number}. Пропускаем.");
+                    //            //continue;
+                    //        }
 
 
-                            // Создаем DirectShape
-                            DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
-                            ds.SetShape(geometryObjects);
-                            ds.Name = $"Point_{pointData.Number}_Outside"; // Присваиваем имя для идентификации
+                    //        // Создаем DirectShape
+                    //        DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
+                    //        ds.SetShape(geometryObjects);
+                    //        ds.Name = $"Point_{pointData.Number}_Outside"; // Присваиваем имя для идентификации
 
-                            //Parameter materialParam = ds.get_Parameter(BuiltInParameter.FAMILY_ELEM_SUBCATEGORY);
-                            //if (materialParam != null && materialInsideId != ElementId.InvalidElementId)
-                            //{
-                            //    //ds.SetMaterialIds(new List<ElementId> { materialOutside.Id });
-                            //    try
-                            //    {
-                            //        materialParam.Set(materialInsideId);
-                            //    }
-                            //    catch (Exception setParamEx)
-                            //    {
-                            //        TaskDialog.Show("Ошибка параметра", $"Ошибка установки параметра материала для точки {pointData.Number}: {setParamEx.Message}");
-                            //        System.Diagnostics.Debug.WriteLine($"Ошибка установки параметра материала для DirectShape: {setParamEx.Message}");
-                            //    }
-                            //}
-                            //else if (materialParam == null)
-                            //{
-                            //    System.Diagnostics.Debug.WriteLine($"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
-                            //    TaskDialog.Show("Ошибка параметра", $"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
-                            //}
-                            //else if (materialOutsideId == ElementId.InvalidElementId)
-                            //{
-                            //    System.Diagnostics.Debug.WriteLine($"ID материала Outside недействителен.");
-                            //    TaskDialog.Show("Ошибка материала", $"ID материала Outside недействителен.");
-                            //}
-                        }
-                        TaskDialog.Show("Визуализация", $"Обработано точек вне плит: {pointCountOutside}");
-                    }
+                    //        //Parameter materialParam = ds.get_Parameter(BuiltInParameter.FAMILY_ELEM_SUBCATEGORY);
+                    //        //if (materialParam != null && materialInsideId != ElementId.InvalidElementId)
+                    //        //{
+                    //        //    //ds.SetMaterialIds(new List<ElementId> { materialOutside.Id });
+                    //        //    try
+                    //        //    {
+                    //        //        materialParam.Set(materialInsideId);
+                    //        //    }
+                    //        //    catch (Exception setParamEx)
+                    //        //    {
+                    //        //        TaskDialog.Show("Ошибка параметра", $"Ошибка установки параметра материала для точки {pointData.Number}: {setParamEx.Message}");
+                    //        //        System.Diagnostics.Debug.WriteLine($"Ошибка установки параметра материала для DirectShape: {setParamEx.Message}");
+                    //        //    }
+                    //        //}
+                    //        //else if (materialParam == null)
+                    //        //{
+                    //        //    System.Diagnostics.Debug.WriteLine($"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
+                    //        //    TaskDialog.Show("Ошибка параметра", $"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
+                    //        //}
+                    //        //else if (materialOutsideId == ElementId.InvalidElementId)
+                    //        //{
+                    //        //    System.Diagnostics.Debug.WriteLine($"ID материала Outside недействителен.");
+                    //        //    TaskDialog.Show("Ошибка материала", $"ID материала Outside недействителен.");
+                    //        //}
+                    //    }
+                    //    TaskDialog.Show("Визуализация", $"Обработано точек вне плит: {pointCountOutside}");
+                    //}
 
                     //trans.Commit(); // Завершаем транзакцию
-                    TaskDialog.Show("Визуализация", "Попытка завершить транзакцию.");
+                    //TaskDialog.Show("Визуализация", "Попытка завершить транзакцию.");
                     trans.Commit(); // Завершаем транзакцию
-                    TaskDialog.Show("Визуализация", "Транзакция завершена.");
+                    //TaskDialog.Show("Визуализация", "Транзакция завершена.");
                 }
                 catch (Exception ex)
                 {
@@ -1588,5 +1854,70 @@ namespace Diplom_Project // Ваш namespace
         }
     }
 
+
+    public class PlanarVisualizationHandler : IExternalEventHandler // Определение класса
+    {
+        // TODO: Добавить поля для передачи данных из окна WPF (например, список зон или контуров)
+        // public List<ZoneSolution> ZonesToVisualize { get; set; }
+        // public List<CurveLoop> ZoneBoundaries { get; set; } // Возможно, передавать только контуры
+        // public ElementId TargetLevelId { get; set; } // ID уровня, на котором рисовать
+
+        public void Execute(UIApplication app)
+        {
+            // TODO: Реализовать логику 2D визуализации на плане в Revit API
+            // Получите Document и View (план этажа): Document doc = app.ActiveUIDocument.Document; ViewPlan planView = ...;
+            // Используйте Transaction для внесения изменений.
+            // Используйте GraphicsStyle для определения внешнего вида линий.
+            // Используйте Document.Create.NewDetailCurve() или NewModelCurve() для рисования контуров зон.
+
+            UIDocument uidoc = app.ActiveUIDocument;
+            Document doc = uidoc.Document;
+
+            // TODO: Получить активный вид или найти нужный план этажа
+            // View activeView = doc.ActiveView;
+            // if (!(activeView is ViewPlan))
+            // {
+            //     MessageBox.Show("Активный вид не является планом этажа. Визуализация на плане невозможна.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+            //     return;
+            // }
+            // ViewPlan planView = activeView as ViewPlan;
+
+
+            // Пример: Создание транзакции
+            using (Transaction trans = new Transaction(doc, "Visualize Reinforcement Zones on Plan"))
+            {
+                trans.Start();
+
+                try
+                {
+                    // TODO: Здесь будет логика рисования контуров зон на плане
+                    // Например, для каждого контура в ZoneBoundaries:
+                    // foreach (CurveLoop loop in ZoneBoundaries)
+                    // {
+                    //     foreach (Curve curve in loop)
+                    //     {
+                    //         // Создание линии детализации
+                    //         doc.Create.NewDetailCurve(planView, curve);
+                    //     }
+                    // }
+
+                    System.Diagnostics.Debug.WriteLine("PlanarVisualizationHandler: Выполняется 2D визуализация на плане...");
+
+
+                    trans.Commit(); // Завершаем транзакцию
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"PlanarVisualizationHandler: Ошибка при выполнении 2D визуализации: {ex.Message}");
+                    trans.RollBack(); // Откатываем изменения при ошибке
+                }
+            }
+        }
+
+        public string GetName()
+        {
+            return "Reinforcement Zone Planar Visualization Handler";
+        }
+    }
 
 } // Конец namespace
