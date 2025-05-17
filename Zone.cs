@@ -54,6 +54,21 @@ namespace Diplom_Project
         /// </summary>
         /// <param name="point">Точка, из которой создается зона.</param>
         /// <param name="initialSize">Начальный размер прямоугольника зоны вокруг точки (в футах).</param>
+        /// 
+        public Zone(List<Node> nodes)
+        {
+            if (nodes == null || nodes.Count == 0)
+            {
+                throw new ArgumentException("Список узлов не может быть пустым при создании зоны.");
+            }
+            Points = new List<Node>(nodes); // Копируем список узлов
+            CalculateBounds(); // Рассчитываем границы зоны на основе точек
+            CalculateMaxRequiredLoad(); // Рассчитываем максимальную требуемую нагрузку
+            // Инициализация других свойств
+            Cost = double.MaxValue; // Изначально стоимость неизвестна
+            Length = 0; // Изначально длина 0
+            OptimalRebarConfigs = new RebarConfig[4]; // Инициализация массива для 4 направлений
+        }
         public Zone(Node point, double initialSize)
         {
             Points = new List<Node> { point };
@@ -80,6 +95,99 @@ namespace Diplom_Project
             Cost = 0;
             Length = 0;
         }
+
+        private void CalculateBounds()
+        {
+            if (Points == null || Points.Count == 0)
+            {
+                Bounds = null; // Или инициализировать пустой BoundingBoxXYZ, если возможно
+                return;
+            }
+
+            double minX = double.MaxValue;
+            double minY = double.MaxValue;
+            double minZ = double.MaxValue;
+            double maxX = double.MinValue;
+            double maxY = double.MinValue;
+            double maxZ = double.MinValue;
+
+            foreach (var point in Points)
+            {
+                // Используем координаты точки в футах (предполагается, что они уже в футах в объекте Node)
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+                minZ = Math.Min(minZ, point.ZCenter); // Используем ZCenter или ZMin/ZMax если они есть в Node
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+                maxZ = Math.Max(maxZ, point.ZCenter); // Используем ZCenter или ZMin/ZMax
+            }
+
+            Bounds = new BoundingBoxXYZ
+            {
+                Min = new XYZ(minX, minY, minZ),
+                Max = new XYZ(maxX, maxY, maxZ)
+            };
+        }
+
+        //private void CalculateBounds(double size_ft)
+        //{
+        //    if (Points == null || Points.Count != 1)
+        //    {
+        //        // Этот метод предназначен только для зон с одной точкой
+        //        CalculateBounds(); // Возвращаемся к расчету по точкам, если условие не выполнено
+        //        return;
+        //    }
+
+        //    Node point = Points.First(); // Берем единственную точку
+        //    XYZ center = point.GetXYZ(); // Координаты точки в футах
+
+        //    double halfSize = size_ft / 2.0;
+
+        //    Bounds = new BoundingBoxXYZ
+        //    {
+        //        Min = new XYZ(center.X - halfSize, center.Y - halfSize, center.Z - halfSize), // Учитываем Z
+        //        Max = new XYZ(center.X + halfSize, center.Y + halfSize, center.Z + halfSize)  // Учитываем Z
+        //    };
+        //}
+
+        private void CalculateMaxRequiredLoad()
+        {
+            MaxRequiredLoad = new double[4]; // Инициализация для 4 направлений
+
+            if (Points == null || Points.Count == 0)
+            {
+                // Если точек нет, требуемая нагрузка 0 по всем направлениям
+                return;
+            }
+
+            // Инициализируем максимальные нагрузки минимальными возможными значениями
+            MaxRequiredLoad[0] = double.MinValue; // As1X
+            MaxRequiredLoad[1] = double.MinValue; // As2X
+            MaxRequiredLoad[2] = double.MinValue; // As3Y
+            MaxRequiredLoad[3] = double.MinValue; // As4Y
+
+            foreach (var point in Points)
+            {
+                // Обновляем максимальные нагрузки для каждого направления
+                // Учитываем только те направления, которые не были отключены пользователем (значение != -1 в Node)
+                if (point.As1X != -1) MaxRequiredLoad[0] = Math.Max(MaxRequiredLoad[0], point.As1X);
+                if (point.As2X != -1) MaxRequiredLoad[1] = Math.Max(MaxRequiredLoad[1], point.As2X);
+                if (point.As3Y != -1) MaxRequiredLoad[2] = Math.Max(MaxRequiredLoad[2], point.As3Y);
+                if (point.As4Y != -1) MaxRequiredLoad[3] = Math.Max(MaxRequiredLoad[3], point.As4Y);
+            }
+
+            // Если после прохода по всем точкам максимальное значение осталось double.MinValue,
+            // значит, армирование по этому направлению не требовалось ни в одной точке зоны
+            // (или направление было отключено пользователем). Устанавливаем требуемую нагрузку в 0.
+            for (int i = 0; i < 4; i++)
+            {
+                if (MaxRequiredLoad[i] == double.MinValue)
+                {
+                    MaxRequiredLoad[i] = 0;
+                }
+            }
+        }
+
 
         /// <summary>
         /// Конструктор для создания объединенной зоны из двух существующих зон.
@@ -201,6 +309,48 @@ namespace Diplom_Project
             System.Diagnostics.Debug.WriteLine($"Подбор арматуры: Для зоны с точками {string.Join(",", Points.Select(p => p.Number))}. Общая стоимость: {this.Cost:F2} руб, Общая длина: {this.Length:F2} футов.");
         }
 
+
+        public void FindOptimalRebarSolution(List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds)
+        {
+            // Сбрасываем предыдущее решение
+            Cost = 0; // Начинаем с 0, будем суммировать по направлениям
+            Length = 0; // Начинаем с 0
+            OptimalRebarConfigs = new RebarConfig[4]; // Сбрасываем массив конфигураций
+
+            // Проверяем входные данные
+            // Добавлена проверка basicReinforcementThresholds
+            if (availableRebars == null || availableRebars.Count == 0 || Bounds == null || basicReinforcementThresholds == null || basicReinforcementThresholds.Length != 4)
+            {
+                Cost = double.MaxValue; // Невозможно найти решение без данных или границ
+                System.Diagnostics.Debug.WriteLine("Zone.FindOptimalRebarSolution: Недостаточно входных данных (availableRebars, Bounds, или basicReinforcementThresholds).");
+                return;
+            }
+
+            // Итерируемся по каждому из 4 направлений армирования
+            for (int directionIndex = 0; directionIndex < 4; directionIndex++)
+            {
+                double requiredLoad = MaxRequiredLoad[directionIndex];
+                // Получаем порог для текущего направления из переданного массива
+                double basicThreshold = basicReinforcementThresholds[directionIndex];
+
+                // Если требуемая нагрузка по данному направлению <= 0, или она меньше или равна порогу основного армирования (если порог задан),
+                // дополнительное армирование не требуется
+                if (requiredLoad <= 0 || (basicThreshold != -1 && requiredLoad <= basicThreshold))
+                {
+                    OptimalRebarConfigs[directionIndex] = null; // Нет необходимости в арматуре по этому направлению
+                    continue; // Переходим к следующему направлению
+                }
+
+                // ... (остальная часть метода FindOptimalRebarSolution, включая расчет стоимости и длины)
+                // Убедитесь, что внутри этого метода вы также передаете basicReinforcementThresholds
+                // при вызове CalculateRebarCostAndLengthForDirection, если этот метод его требует.
+                // (В предоставленном мной коде CalculateRebarCostAndLengthForDirection не требует basicReinforcementThresholds напрямую,
+                // т.к. requiredLoad уже учитывает порог).
+
+                // ... (остальная часть метода FindOptimalRebarSolution)
+            }
+            // ... (конец метода FindOptimalRebarSolution)
+        }
         /// <summary>
         /// Метод для расчета "выгодности" объединения текущей зоны с другой зоной.
         /// Учитывает потенциальную экономию.
@@ -210,20 +360,41 @@ namespace Diplom_Project
         /// <param name="openings">Список контуров отверстий в плите (в футах).</param>
         /// <param name="plateBoundary">Внешний контур плиты (в футах).</param>
         /// <returns>Потенциальная экономия от объединения (руб). Отрицательное значение означает удорожание.</returns>
-        public double CalculateMergeBenefit(Zone otherZone, List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary)
+        //public double CalculateMergeBenefit(Zone otherZone, List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary)
+        //{
+        //    // 1. Создать временную объединенную зону (используя конструктор Zone(zoneA, zoneB)).
+        //    Zone potentialMergedZone = new Zone(this, otherZone);
+
+        //    // 2. Для временной зоны подобрать оптимальное арматурное решение, вызвав ее метод FindOptimalRebarSolution(...).
+        //    // Важно: FindOptimalRebarSolution обновит Cost и Length временной зоны
+        //    potentialMergedZone.FindOptimalRebarSolution(availableRebars, openings, plateBoundary);
+
+        //    // 3. Рассчитать выгоду = (this.Cost + otherZone.Cost) - Стоимость временной зоны.
+        //    // Если FindOptimalRebarSolution вернул double.MaxValue (не найдено решение),
+        //    // то выгода будет отрицательной и очень большой, что правильно.
+        //    double mergeBenefit = (this.Cost + otherZone.Cost) - potentialMergedZone.Cost;
+
+        //    System.Diagnostics.Debug.WriteLine($"Расчет выгоды: Объединение зон с точками {string.Join(",", this.Points.Select(p => p.Number))} и {string.Join(",", otherZone.Points.Select(p => p.Number))}. Выгода: {mergeBenefit:F2} руб.");
+
+        //    return mergeBenefit;
+        //}
+
+        public double CalculateMergeBenefit(Zone otherZone, List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds) // Добавлен basicReinforcementThresholds в сигнатуру
         {
             // 1. Создать временную объединенную зону (используя конструктор Zone(zoneA, zoneB)).
             Zone potentialMergedZone = new Zone(this, otherZone);
 
             // 2. Для временной зоны подобрать оптимальное арматурное решение, вызвав ее метод FindOptimalRebarSolution(...).
             // Важно: FindOptimalRebarSolution обновит Cost и Length временной зоны
-            potentialMergedZone.FindOptimalRebarSolution(availableRebars, openings, plateBoundary);
+            // ПЕРЕДАЕМ BASICREINFORCEMENTTHRESHOLDS!
+            potentialMergedZone.FindOptimalRebarSolution(availableRebars, openings, plateBoundary, basicReinforcementThresholds); // Передаем basicReinforcementThresholds
 
             // 3. Рассчитать выгоду = (this.Cost + otherZone.Cost) - Стоимость временной зоны.
             // Если FindOptimalRebarSolution вернул double.MaxValue (не найдено решение),
             // то выгода будет отрицательной и очень большой, что правильно.
             double mergeBenefit = (this.Cost + otherZone.Cost) - potentialMergedZone.Cost;
 
+            // Отладочный вывод (можно оставить или удалить)
             System.Diagnostics.Debug.WriteLine($"Расчет выгоды: Объединение зон с точками {string.Join(",", this.Points.Select(p => p.Number))} и {string.Join(",", otherZone.Points.Select(p => p.Number))}. Выгода: {mergeBenefit:F2} руб.");
 
             return mergeBenefit;

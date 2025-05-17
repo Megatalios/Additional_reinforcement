@@ -90,14 +90,23 @@ namespace Diplom_Project // Ваш namespace
             // Создаем экземпляры обработчиков
             visualizationHandler = new VisualizationHandler();
             cleanHandler = new CleanHandler();
+            // Инициализируем обработчик 2D визуализации
+            planarVisualizationHandler = new PlanarVisualizationHandler();
+
 
             // Создаем экземпляры ExternalEvent, связывая их с обработчиками
             visualizationEvent = ExternalEvent.Create(visualizationHandler);
             cleanEvent = ExternalEvent.Create(cleanHandler);
+            // Создаем ExternalEvent для 2D визуализации
+            planarVisualizationEvent = ExternalEvent.Create(planarVisualizationHandler);
+
 
             // Передаем UIDocument обработчикам, чтобы они могли работать с текущим документом
             visualizationHandler.UiDocument = uiDocument;
             cleanHandler.UiDocument = uiDocument;
+            // Передаем UIDocument обработчику 2D визуализации
+            planarVisualizationHandler.UiDocument = uiDocument;
+
             // ==================================================
 
 
@@ -122,17 +131,6 @@ namespace Diplom_Project // Ваш namespace
                 {
                     LevelComboBox.SelectedIndex = 0;
                 }
-
-                // Опционально: загрузить последний выбранный уровень из настроек
-                // try
-                // {
-                //     string lastLevelName = Properties.Settings.Settings.Default.FlrName;
-                //     if (LevelComboBox.Items.Contains(lastLevelName))
-                //     {
-                //         LevelComboBox.SelectedItem = lastLevelName;
-                //     }
-                // }
-                // catch { /* Игнорируем ошибки загрузки настроек */ }
 
             }
             catch (Exception ex)
@@ -160,41 +158,7 @@ namespace Diplom_Project // Ваш namespace
             // Подписка на событие закрытия окна для сохранения настроек
             this.Closed += ReinforcementInputWindow_Closed;
 
-            // === Загрузка данных из JSON и настроек (адаптировать из референса) ===
-            // Этот код должен быть здесь, чтобы данные и настройки были загружены при открытии окна
-            // Вам нужно будет адаптировать или реализовать класс DataFile и его методы
-            // Убедитесь, что Tools доступен (например, в том же namespace или через using)
-            // try
-            // {
-            //     string msg = DataFile.ValidateJSONFile(); // Проверка и создание JSON файла
-            //     // Здесь можно добавить вывод msg в лог или статус-бар окна
-            //     DataFile.LoadAllData(DiamStep, DiamCost, Length); // Загрузка данных из JSON в DataTable
-            // }
-            // catch (Exception ex)
-            // {
-            //     MessageBox.Show($"Ошибка при загрузке данных JSON: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-            //     // Возможно, деактивировать кнопки расчета, если данные не загружены
-            // }
-
-            // === Загрузка последних использованных настроек UI (адаптировать из референса) ===
-            // Вам нужно будет настроить Properties.Settings в проекте (Project -> Properties -> Settings)
-            // try
-            // {
-            //     int numOfSolSetting = Properties.Settings.Settings.Default.MaxSol;
-            //     MaxSolTextBox.Text = (numOfSolSetting > 0) ? numOfSolSetting.ToString() : "";
-
-            //     string flrNameSetting = Properties.Settings.Settings.Default.FlrName;
-            //     // Если загруженное имя уровня есть в ComboBox, выбираем его
-            //     if (LevelComboBox.Items.Contains(flrNameSetting))
-            //     {
-            //         LevelComboBox.SelectedItem = flrNameSetting;
-            //     }
-            // }
-            // catch (Exception ex)
-            // {
-            //      MessageBox.Show($"Ошибка при загрузке настроек: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-            //      // Продолжаем с настройками по умолчанию (пустые поля или первый уровень)
-            // }
+            
 
         }
 
@@ -249,7 +213,7 @@ namespace Diplom_Project // Ваш namespace
                 PlanarButton.IsEnabled = false;
                 CancelButton.IsEnabled = false;
                 ZonesTable.Clear(); // Очищаем предыдущие результаты в таблице
-                // bestSolutions = null; // Очищаем предыдущие решения (если поле bestSolutions существует)
+                bestSolutions = null; // Очищаем предыдущие решения (если поле bestSolutions существует)
 
 
                 // --- Вызываем метод чтения ВСЕХ точек заданного типа из CsvFileReader ---
@@ -537,12 +501,6 @@ namespace Diplom_Project // Ваш namespace
 
                         // Если точка прошла все проверки, она находится внутри этой плиты
                         // Добавляем отфильтрованную и привязанную точку в список для соответствующей плиты
-                        //pointsInsideFloorsGrouped[i].Add(pointData); // Добавляем Additional_Reinforcement_point сюда
-                        //foundSlab = true; // Устанавливаем флаг, что плита найдена
-
-                        //// Точка найдена в одной плите, переходим к следующей отфильтрованной точке
-                        //break; // Точка может принадлежать только одной плите на одном уровне
-
                         Level floorLevel = document.GetElement(floor.LevelId) as Level;
                         if (floorLevel == null) continue; // Если не удалось получить уровень, пропускаем плиту
 
@@ -622,6 +580,8 @@ namespace Diplom_Project // Ваш namespace
                         CancelButton.IsEnabled = true; // Отменить виз.
                     }
                 }
+
+                // === 4. Преобразование точек в узлы для оптимизации ===
                 var nodesForOptimizer = new List<List<Node>>();
                 for (int i = 0; i < pointsInsideFloorsGrouped.Count; i++)
                 {
@@ -661,16 +621,26 @@ namespace Diplom_Project // Ваш namespace
                     this.IsEnabled = true;
                     return;
                 }
+
+                // === 5. Получение геометрии плиты и отверстий для оптимизатора ===
+                // Нам нужны контуры плиты и отверстий для каждой плиты, к которой привязаны узлы.
+                // Пока для простоты возьмем геометрию первой плиты, к которой привязаны узлы.
+                // В будущей реализации нужно будет обрабатывать каждую плиту отдельно.
                 List<CurveLoop> openings = new List<CurveLoop>();
                 CurveLoop plateBoundary = null;
+                ElementId floorIdForCalculation = ElementId.InvalidElementId;
 
-                // Собираем контуры отверстий и внешний контур для первой плиты (для примера)
                 if (floors.Count > 0)
                 {
-                    Floor firstFloor = floors.First();
+                    // Находим индекс плиты, к которой привязаны узлы (берем первую группу узлов)
+                    int firstSlabIndexWithNodes = nodesForOptimizer.First(nl => nl.Count > 0).First().SlabId;
+                    Floor targetFloor = floors[firstSlabIndexWithNodes]; // Получаем объект плиты по индексу
+                    floorIdForCalculation = targetFloor.Id; // Сохраняем ID плиты
+
+                    // Получаем контур плиты и отверстий
                     Options geomOptions = new Options();
                     geomOptions.ComputeReferences = true;
-                    GeometryElement geomElem = firstFloor.get_Geometry(geomOptions);
+                    GeometryElement geomElem = targetFloor.get_Geometry(geomOptions);
                     PlanarFace topFace = null;
 
                     foreach (GeometryObject geomObj in geomElem)
@@ -711,38 +681,10 @@ namespace Diplom_Project // Ваш namespace
                     return;
                 }
 
+                // === 6. Загрузка конфигураций арматуры из CSV ===
                 List<RebarConfig> availableRebars = new List<RebarConfig>();
-
-
-                // TODO: Реализовать загрузку данных об арматуре из JSON/CSV и преобразование в List<RebarConfig>
-                // Пример (если у вас есть DataTable DiamStep и DiamCost):
-                // try
-                // {
-                //     availableRebars = DiamStep.AsEnumerable()
-                //         .GroupBy(r => Convert.ToDouble(r["Diam"])) // Группируем по диаметру
-                //         .Select(g => new RebarConfig // Для каждой группы создаем RebarConfig
-                //         {
-                //             Name = $"D{g.Key}", // Пример имени
-                //             Diameter = g.Key,
-                //             Spacing = g.First()["Step"] != DBNull.Value ? Convert.ToDouble(g.First()["Step"]) : 0, // Берем первый шаг для диаметра (или нужно выбрать лучший?)
-                //             // TODO: Как определить BearingCapacity для RebarConfig из ваших данных?
-                //             // BearingCapacity = ??? // Нужно найти или рассчитать
-                //             CostPerMeter = DiamCost.AsEnumerable()
-                //                 .FirstOrDefault(r => Convert.ToDouble(r["Diam"]) == g.Key)?["Cost"] != DBNull.Value
-                //                 ? Convert.ToDouble(DiamCost.AsEnumerable()
-                //                     .First(r => Convert.ToDouble(r["Diam"]) == g.Key)["Cost"]) : 0,
-                //         })
-                //         .Where(r => r.CostPerMeter > 0 && r.Spacing > 0) // Фильтруем некорректные данные
-                //         .ToList();
-                // }
-                // catch (Exception ex)
-                // {
-                //     MessageBox.Show($"Ошибка при подготовке данных об арматуре: {ex.Message}", "Ошибка данных", MessageBoxButton.OK, MessageBoxImage.Error);
-                //     this.IsEnabled = true;
-                //     return;
-                // }
                 string rebarCsvFilePath = "C:\\Users\\kamil\\Desktop\\rebars.csv";
-                // Вызываем новый метод для загрузки конфигураций арматуры
+
                 string rebarLoadingError;
                 availableRebars = LoadRebarConfigsFromCsv(rebarCsvFilePath, out rebarLoadingError);
 
@@ -784,7 +726,10 @@ namespace Diplom_Project // Ваш namespace
                 // Передаем списки узлов, сгруппированные по плитам.
                 // Этот вызов может быть обернут в Task.Run, если он длительный и не использует API.
                 // Предполагаем, что FindBestReinforcementSolutions не вызывает API напрямую.
+                // TODO: Адаптировать FindBestReinforcementSolutions для работы со списком узлов, сгруппированных по плитам
+                // Пока передаем только первую группу узлов и первую плиту для примера.
                 List<ReinforcementSolution> bestSolutions = await Task.Run(() => optimizer.FindBestReinforcementSolutions(nodesForOptimizer.FirstOrDefault(), floors.FirstOrDefault())); // TODO: Передавать нужную плиту или адаптировать FindBestReinforcementSolutions для работы со списком плит
+                
 
                 // Очищаем оптимизатор после использования (опционально)
                 optimizer = null;
@@ -819,8 +764,22 @@ namespace Diplom_Project // Ваш namespace
                         row["Count"] = solution.Zones.Count; // Количество зон в решении
                         row["TotalCost"] = solution.TotalCost; // Общая стоимость
                         row["TotalLength"] = solution.TotalLength; // Общая длина
-                        // TODO: Добавить информацию об уровне, если она нужна в таблице
-                        // row["Level"] = levelName; // Или имя уровня из плиты, если оптимизация по одной плите
+                        // Добавляем информацию об уровне
+                        // Предполагаем, что все зоны в решении относятся к одной плите,
+                        // и мы знаем ID этой плиты (floorIdForCalculation).
+                        // Находим имя уровня по ID плиты.
+                        string solutionLevelName = "Неизвестен";
+                        Floor solutionFloor = floors.FirstOrDefault(f => f.Id == floorIdForCalculation);
+                        if (solutionFloor != null)
+                        {
+                            Level floorLevel = document.GetElement(solutionFloor.LevelId) as Level;
+                            if (floorLevel != null)
+                            {
+                                solutionLevelName = floorLevel.Name;
+                            }
+                        }
+                        row["Level"] = solutionLevelName;
+
 
                         // Добавляем заполненную строку в DataTable
                         ZonesTable.Rows.Add(row);
@@ -837,9 +796,17 @@ namespace Diplom_Project // Ваш namespace
                 // TODO: Сохранить bestSolutions в поле класса, чтобы использовать их для визуализации
                 this.bestSolutions = bestSolutions; // Предполагаем, что поле bestSolutions определено в ReinforcementInputWindow
 
+                // Передаем ID плиты в обработчик визуализации
+                // Это нужно сделать после успешного расчета и определения floorIdForCalculation
+                if (floorIdForCalculation != ElementId.InvalidElementId)
+                {
+                    planarVisualizationHandler.FloorId = floorIdForCalculation;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("ReinforcementInputWindow: Не удалось определить ID плиты для визуализации.");
+                }
 
-
-                
 
             }
             catch (Exception ex)
@@ -854,26 +821,13 @@ namespace Diplom_Project // Ваш namespace
                 PlanarButton.IsEnabled = false;
                 CancelButton.IsEnabled = false;
                 ZonesTable.Clear(); // Очищаем таблицу результатов при ошибке
-                // bestSolutions = null; // Очищаем решения при ошибке
+                bestSolutions = null; // Очищаем решения при ошибке
             }
             finally
             {
                 this.IsEnabled = true; // Включаем UI обратно после завершения (или ошибки) этой части логики
             }
-            // Сохранение настроек после успешного получения параметров (опционально)
-            // try
-            // {
-            //     // Сохраняем выбранное имя уровня
-            //     Properties.Settings.Settings.Default.FlrName = LevelComboBox.SelectedItem?.ToString() ?? "";
-            //     Properties.Settings.Settings.Default.MainFit = ArmTextBox.Text;
-            //     // MaxSolTextBox сохраняется при успешном парсинге в CalculateButton_Click
-            //     // Properties.Settings.Settings.Default.MaxSol = maxSolutions; // Не сохраняем здесь, чтобы избежать дублирования
-            //     Properties.Settings.Settings.Default.Save();
-            // }
-            // catch (Exception ex)
-            // {
-            //      // MessageBox.Show($"Ошибка при сохранении настроек: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-            // }
+            
         }
 
         /// <summary>
@@ -897,10 +851,34 @@ namespace Diplom_Project // Ваш namespace
         /// </summary>
         private void PlanarButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Реализовать логику 2D визуализации (если требуется)
-            // Возможно, потребуется отдельный ExternalEvent и обработчик для 2D
-            MessageBox.Show("Логика 2D визуализации будет реализована здесь.", "Следующий шаг", MessageBoxButton.OK, MessageBoxImage.Information);
+            // Проверяем, есть ли рассчитанные решения
+            if (bestSolutions == null || bestSolutions.Count == 0)
+            {
+                MessageBox.Show("Нет рассчитанных решений для визуализации.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Выбираем лучшее решение (например, первое)
+            ReinforcementSolution bestSolution = bestSolutions.First();
+
+            // Извлекаем ZoneSolution из лучшего решения
+            // Передаем список ZoneSolution, а не Zone, так как ZoneSolution содержит Bounds
+            List<ZoneSolution> zoneSolutionsToDraw = bestSolution.Zones; // Используем bestSolution.Zones
+
+            // Обновляем список зон в обработчике 2D визуализации
+            planarVisualizationHandler.ZonesToVisualize = zoneSolutionsToDraw;
+
+            // ID плиты уже должен быть установлен в planarVisualizationHandler.FloorId
+            // после успешного расчета в CalculateButton_Click
+
+            // Вызываем External Event для выполнения 2D визуализации в Revit
+            planarVisualizationEvent.Raise();
+
+            System.Diagnostics.Debug.WriteLine("External Event для 2D визуализации вызван.");
+
         }
+
+        
 
         /// <summary>
         /// Обработчик нажатия кнопки "Отменить виз.".
@@ -957,29 +935,13 @@ namespace Diplom_Project // Ваш namespace
             // Логика сохранения настроек UI будет здесь (если требуется)
             try
             {
-                // Сохраняем выбранное имя уровня
-                //Properties.Settings.Settings.Default.FlrName = LevelComboBox.SelectedItem?.ToString() ?? "";
-                //Properties.Settings.Settings.Default.MainFit = ArmTextBox.Text;
-                // MaxSolTextBox сохраняется при успешном парсинге в CalculateButton_Click
-                // Properties.Settings.Settings.Default.MaxSol = maxSolutions; // Не сохраняем здесь, чтобы избежать дублирования
-                //Properties.Settings.Settings.Default.Save();
+               
             }
             catch (Exception ex)
             {
                 // MessageBox.Show($"Ошибка при сохранении настроек: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
-
-        // --- Вспомогательные классы и методы ---
-
-        // Перемещено определение класса Additional_Reinforcement_point на уровень пространства имен
-        /// <summary>
-        /// Представляет точку из CSV файла с координатами и данными армирования.
-        /// Координаты хранятся в исходных единицах CSV (например, метры).
-        /// </summary>
-        
-
 
         /// <summary>
         /// Проверяет, находится ли точка внутри заданного CurveLoop (полигона).
@@ -1185,60 +1147,76 @@ namespace Diplom_Project // Ваш namespace
     /// Координаты хранятся в футах Revit API.
     /// Значения As* хранятся в исходных единицах CSV, или -1, если направление не выбрано.
     /// </summary>
-    public class Node
-    {
-        // Исходные данные точки
-        public string Type { get; set; }
-        public int Number { get; set; }
-
-        // Координаты точки в футах Revit API
-        public double X { get; set; }
-        public double Y { get; set; }
-        public double ZCenter { get; set; } // Z центр в футах
-        public double ZMin { get; set; } // Z минимум в футах
-
-        // Требуемое армирование по направлениям в исходных единицах CSV
-        // Значение -1 указывает, что это направление было исключено пользователем
-        public double As1X { get; set; }
-        public double As2X { get; set; }
-        public double As3Y { get; set; }
-        public double As4Y { get; set; }
-
-        // Индекс плиты, к которой привязана эта точка (индекс в списке floors)
-        public int SlabId { get; set; }
-
-        // Дополнительные поля, которые могут потребоваться для алгоритма (например, для кластеризации)
-        public int ClusterID { get; set; } = 0; // Идентификатор кластера
-        // public double RequiredAs { get; set; } // Требуемая площадь армирования для этой точки (может рассчитываться в Optimizer)
-        // public XYZ PointXYZ { get; set; } // Координаты в виде XYZ (опционально)
-
-        // Конструктор (опционально)
-        // public Node(string type, int number, double x_ft, double y_ft, double zCenter_ft, double zMin_ft, double as1x, double as2x, double as3y, double as4y, int slabId)
-        // {
-        //     Type = type;
-        //     Number = number;
-        //     X = x_ft;
-        //     Y = y_ft;
-        //     ZCenter = zCenter_ft;
-        //     ZMin = zMin_ft;
-        //     As1X = as1x;
-        //     As2X = as2x;
-        //     As3Y = as3y;
-        //     As4Y = as4y;
-        //     SlabId = slabId;
-        // }
-    }
+    
 
     /// <summary>
     /// Скелет класса для представления решения по зоне армирования.
     /// </summary>
     public class ZoneSolution
     {
-        // public Rectangle Boundary { get; set; } // Границы зоны (нужно определить класс Rectangle или использовать BoundingBoxXYZ)
-        public double Diameter { get; set; } // Диаметр арматуры в зоне
-        public double Spacing { get; set; } // Шаг арматуры в зоне
-        public double ZoneCost { get; set; } // Стоимость арматуры в зоне
-        public double ZoneLength { get; set; } // Длина арматуры в зоне
+        //// public Rectangle Boundary { get; set; } // Границы зоны (нужно определить класс Rectangle или использовать BoundingBoxXYZ)
+        //public double Diameter { get; set; } // Диаметр арматуры в зоне
+        //public double Spacing { get; set; } // Шаг арматуры в зоне
+        //public double ZoneCost { get; set; } // Стоимость арматуры в зоне
+        //public double ZoneLength { get; set; } // Длина арматуры в зоне
+
+        /// <summary>
+        /// Геометрические границы зоны в виде BoundingBoxXYZ (в футах Revit API).
+        /// Это свойство необходимо для визуализации зоны.
+        /// </summary>
+        public BoundingBoxXYZ Bounds { get; set; } // Добавлено свойство Bounds
+
+        /// <summary>
+        /// Список узлов, которые входят в эту зону в данном решении.
+        /// </summary>
+        public List<Node> NodesInZone { get; set; }
+
+        /// <summary>
+        /// Оптимальные конфигурации арматуры, подобранные для каждого из четырех направлений
+        /// в этой зоне в данном решении. Может быть null, если армирование по данному направлению не требуется.
+        /// Индексы: 0 - As1X, 1 - As2X, 2 - As3Y, 3 - As4Y.
+        /// </summary>
+        public RebarConfig[] OptimalRebarConfigs { get; set; } // Добавлено свойство OptimalRebarConfigs
+
+        /// <summary>
+        /// Максимальная требуемая нагрузка по каждому из четырех направлений
+        /// среди всех точек в этой зоне в данном решении (в кН/м²).
+        /// Индексы: 0 - As1X, 1 - As2X, 2 - As3Y, 3 - As4Y.
+        /// </summary>
+        public double[] MaxRequiredLoad { get; set; } // Добавлено свойство MaxRequiredLoad
+
+        /// <summary>
+        /// Рассчитанная общая стоимость арматуры для этой зоны в данном решении (в рублях).
+        /// </summary>
+        public double ZoneCost { get; set; }
+
+        /// <summary>
+        /// Рассчитанная общая длина арматуры для этой зоны в данном решении (в футах).
+        /// </summary>
+        public double ZoneLength { get; set; } // Добавлено свойство ZoneLength
+
+        // TODO: Возможно, добавить другие свойства, если нужно (например, информацию о типе армирования)
+
+        /// <summary>
+        /// Конструктор по умолчанию (может быть полезен).
+        /// </summary>
+        public ZoneSolution()
+        {
+            NodesInZone = new List<Node>();
+            OptimalRebarConfigs = new RebarConfig[4]; // Инициализация массива
+            MaxRequiredLoad = new double[4]; // Инициализация массива
+        }
+
+        // Возможно, добавить конструктор для удобного создания из объекта Zone
+        // public ZoneSolution(Zone zone)
+        // {
+        //     Bounds = zone.Bounds;
+        //     NodesInZone = new List<Node>(zone.Points);
+        //     OptimalRebarConfigs = (RebarConfig[])zone.OptimalRebarConfigs.Clone();
+        //     MaxRequiredLoad = (double[])zone.MaxRequiredLoad.Clone();
+        //     ZoneCost = zone.Cost;
+        //     ZoneLength = zone.Length;
+        // }
         // ... другие свойства ...
     }
 
@@ -1251,168 +1229,8 @@ namespace Diplom_Project // Ваш namespace
         public double TotalCost { get; set; } // Общая стоимость решения
         public double TotalLength { get; set; } // Общая длина арматуры
         public int Num { get; set; } // Порядковый номер решения
-
-        // public double FitnesCost { get; set; } // Показатель приспособленности для GA (если используется)
-        // ... другие свойства ...
     }
 
-    /// <summary>
-    /// Скелет класса для представления конфигурации арматуры (диаметр, шаги, цена).
-    /// </summary>
-    //public class RebarConfig
-    //{
-    //    public int Diameter { get; set; } // Диаметр
-    //    public List<double> AvailableSpacings { get; set; } // Список доступных шагов для этого диаметра
-    //    public double PricePerMeter { get; set; } // Цена за метр
-    //}
-
-
-    /// <summary>
-    /// Скелет класса для расчетного алгоритма (оптимизатора).
-    /// </summary>
-    public class ReinforcementOptimizer
-    {
-        // Добавляем публичное свойство Openings
-        public List<List<XYZ>> Openings { get; set; } // Отверстия в плитах (если нужны оптимизатору)
-        public int NumOfSol { get; set; } // Количество решений для поиска
-        public double[] BasicReinforcement { get; set; } // Массив порогов для As1X, As2X, As3Y, As4Y (-1 если не выбрано)
-        public List<double> StandardLengths { get; set; } // Стандартные длины стержней
-        public List<RebarConfig> AvailableRebars { get; set; } // Доступные конфигурации арматуры
-        // public double FitnesCoef { get; set; } = 100000; // Коэффициент для штрафа за количество зон (если используется GA)
-
-        // Скелет метода для получения отверстий из Revit
-        // Этот метод должен быть реализован и, вероятно, работать в контексте Revit API
-        public static List<List<XYZ>> GetOpeningsFromRevit(List<Floor> floors)
-        {
-            // TODO: Реализовать логику получения контуров отверстий из плит
-            // Вам нужно будет получить геометрию каждой плиты, найти грани отверстий
-            // и преобразовать их в список списков XYZ или аналогичную структуру.
-            // Убедитесь, что координаты отверстий также в футах Revit.
-            return new List<List<XYZ>>(); // Возвращаем пустой список как заглушку
-        }
-
-        // Скелет основного метода поиска лучших решений
-        // Этот метод должен быть реализован
-        // Он принимает узлы (сгруппированные по плитам), количество решений и плиты
-        public List<ReinforcementSolution> FindBestSolutions(List<List<Node>> nodesForOptimizer, int maxSolutions, List<Floor> floors)
-        {
-            // TODO: Реализовать логику расчетного алгоритма (кластеризация, генетический алгоритм и т.д.)
-            // Используйте входные данные (nodesForOptimizer, maxSolutions, floors, Openings, BasicReinforcement, StandardLengths, AvailableRebars)
-            // для поиска оптимальных зон армирования.
-            // Возвращайте список найденных решений ReinforcementSolution.
-
-            // Пример: Возвращаем пустой список как заглушку
-            return new List<ReinforcementSolution>();
-        }
-
-        // TODO: Добавить другие вспомогательные методы оптимизатора, если они есть в референсе (например, CreateOptimalZone, MergeZones, CalculateCost, CheckIntersection и т.д.)
-    }
-
-    // TODO: Добавить скелет класса DataFile для работы с JSON данными об арматуре
-    // public static class DataFile { ... }
-
-    // TODO: Добавить скелет класса ProgressWindow для отображения прогресса
-    // public partial class ProgressWindow : Window { ... }
-
-
-    // === Скелет класса CsvFileReader ===
-    // Этот класс должен содержать логику для чтения CSV файла.
-    // Вам нужно будет адаптировать или реализовать его полностью.
-    //public static class CsvFileReader
-    //{
-    //    /// <summary>
-    //    /// Читает точки заданного типа из CSV файла.
-    //    /// </summary>
-    //    /// <param name="path">Путь к CSV файлу.</param>
-    //    /// <param name="type">Тип объектов для чтения (например, "Floor").</param>
-    //    /// <param name="error">Выходной параметр для сообщения об ошибках парсинга строк.</param>
-    //    /// <returns>Список точек Additional_Reinforcement_point или null при критической ошибке файла.</returns>
-    //    public static List<Additional_Reinforcement_point> ReadAllPointsOfType(string path, string type, out string error)
-    //    {
-    //        error = ""; // Инициализируем сообщение об ошибках
-    //        List<Additional_Reinforcement_point> points = new List<Additional_Reinforcement_point>();
-    //        StringBuilder errorBuilder = new StringBuilder();
-    //        int lineNumber = 0;
-
-    //        try
-    //        {
-    //            using (StreamReader reader = new StreamReader(path))
-    //            {
-    //                string headerLine = reader.ReadLine(); // Пропускаем заголовок
-    //                lineNumber++;
-
-    //                while (!reader.EndOfStream)
-    //                {
-    //                    string line = reader.ReadLine();
-    //                    lineNumber++;
-    //                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-    //                    string[] values = line.Split(';'); // Разделитель - точка с запятой
-
-    //                    // Ожидаемый формат: Type;Number;X;Y;Z;ZMin;As1X;As2X;As3Y;As4Y
-    //                    // Проверяем количество столбцов
-    //                    if (values.Length < 10)
-    //                    {
-    //                        errorBuilder.AppendLine($"Строка {lineNumber}: Недостаточно столбцов ({values.Length}). Пропущена.");
-    //                        continue;
-    //                    }
-
-    //                    try
-    //                    {
-    //                        string currentType = values[0].Trim();
-    //                        int number = int.Parse(values[1].Trim());
-    //                        double x = double.Parse(values[2].Trim(), CultureInfo.InvariantCulture);
-    //                        double y = double.Parse(values[3].Trim(), CultureInfo.InvariantCulture);
-    //                        double z = double.Parse(values[4].Trim(), CultureInfo.InvariantCulture); // Z центр
-    //                        double zMin = double.Parse(values[5].Trim(), CultureInfo.InvariantCulture); // Z минимум
-    //                        double as1x = double.Parse(values[6].Trim(), CultureInfo.InvariantCulture);
-    //                        double as2x = double.Parse(values[7].Trim(), CultureInfo.InvariantCulture);
-    //                        double as3y = double.Parse(values[8].Trim(), CultureInfo.InvariantCulture);
-    //                        double as4y = double.Parse(values[9].Trim(), CultureInfo.InvariantCulture);
-
-    //                        // Фильтруем по заданному типу
-    //                        if (currentType.Equals(type, StringComparison.OrdinalIgnoreCase))
-    //                        {
-    //                            points.Add(new Additional_Reinforcement_point(currentType, number, x, y, z, zMin, as1x, as2x, as3y, as4y));
-    //                        }
-    //                    }
-    //                    catch (FormatException)
-    //                    {
-    //                        errorBuilder.AppendLine($"Строка {lineNumber}: Ошибка парсинга числовых данных. Пропущена.");
-    //                    }
-    //                    catch (IndexOutOfRangeException)
-    //                    {
-    //                        errorBuilder.AppendLine($"Строка {lineNumber}: Ошибка доступа к столбцу. Пропущена.");
-    //                    }
-    //                    catch (Exception ex)
-    //                    {
-    //                        errorBuilder.AppendLine($"Строка {lineNumber}: Неизвестная ошибка при парсинге: {ex.Message}. Пропущена.");
-    //                    }
-    //                }
-    //            }
-    //        }
-    //        catch (FileNotFoundException)
-    //        {
-    //            MessageBox.Show($"Файл не найден: {path}", "Ошибка чтения файла", MessageBoxButton.OK, MessageBoxImage.Error);
-    //            error = "Файл не найден.";
-    //            return null; // Критическая ошибка
-    //        }
-    //        catch (Exception ex)
-    //        {
-    //            MessageBox.Show($"Произошла ошибка при чтении файла CSV: {ex.Message}", "Ошибка чтения файла", MessageBoxButton.OK, MessageBoxImage.Error);
-    //            error = $"Ошибка при чтении файла: {ex.Message}";
-    //            return null; // Критическая ошибка
-    //        }
-
-    //        error = errorBuilder.ToString(); // Сохраняем накопленные ошибки парсинга строк
-    //        return points; // Возвращаем список прочитанных точек
-    //    }
-    //    // TODO: Добавить другие методы CsvFileReader, если они есть в референсе
-    //}
-
-
-    // === Скелеты классов External Event Handlers ===
-    // Эти классы должны реализовывать логику работы с Revit API в потоке Revit.
 
     /// <summary>
     /// Обработчик ExternalEvent для визуализации точек в модели Revit.
@@ -1475,26 +1293,7 @@ namespace Diplom_Project // Ваш namespace
                             foreach (var pointData in slabPointsList)
                             {
                                 pointCountInside++;
-                                //// Получаем координаты точки в футах Revit API
-                                //// Используем константу METERS_TO_FEET из ReinforcementInputWindow
-                                //XYZ pointXYZ_ft = pointData.GetXYZ(ReinforcementInputWindow.METERS_TO_FEET);
-
-                                //// Создаем сферу как геометрию для DirectShape
-                                //// Радиус сферы можно настроить (например, 0.1 фута = ~3 см)
-                                //double sphereRadius = 0.1;
-                                //Sphere sphere = Sphere.Create(pointXYZ_ft, sphereRadius);
-                                //List<GeometryObject> geometryObjects = new List<GeometryObject> { sphere };
-
-                                //// Создаем DirectShape
-                                //DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
-                                //ds.SetShape(geometryObjects);
-                                //ds.Name = $"Point_{pointData.Number}_Inside"; // Присваиваем имя для идентификации
-
-                                //// Назначаем материал, если он найден или создан
-                                //if (materialInside != null)
-                                //{
-                                //    ds.SetMaterialIds(new List<ElementId> { materialInside.Id });
-                                //}
+                                
 
                                 // Получаем координаты точки в футах Revit API
                                 // Используем константу METERS_TO_FEET из ReinforcementInputWindow
@@ -1566,162 +1365,12 @@ namespace Diplom_Project // Ваш namespace
                                 ds.SetShape(geometryObjects);
                                 ds.Name = $"Point_{pointData.Number}_Inside"; // Присваиваем имя для идентификации
 
-                                // Назначаем материал, если он найден или создан
-                                //if (materialInside != null)
-                                //{
-                                //    ds.SetMaterialIds(new List<ElementId> { materialInside.Id });
-                                //}
-                                //Parameter materialParam = ds.get_Parameter(BuiltInParameter.FAMILY_ELEM_SUBCATEGORY);
-                                //if (materialParam != null && materialOutsideId != ElementId.InvalidElementId)
-                                //{
-                                //    try
-                                //    {
-                                //        materialParam.Set(materialOutsideId);
-                                //    }
-                                //    catch (Exception setParamEx)
-                                //    {
-                                //        System.Diagnostics.Debug.WriteLine($"Ошибка установки параметра материала для DirectShape: {setParamEx.Message}");
-                                //        TaskDialog.Show("Ошибка параметра", $"Ошибка установки параметра материала для точки {pointData.Number}: {setParamEx.Message}");
-                                //    }
-                                //}
-                                //else if (materialParam == null)
-                                //{
-                                //    System.Diagnostics.Debug.WriteLine($"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
-                                //    TaskDialog.Show("Ошибка параметра", $"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
-                                //}
-                                //else if (materialInsideId == ElementId.InvalidElementId)
-                                //{
-                                //    System.Diagnostics.Debug.WriteLine($"ID материала Inside недействителен.");
-                                //    TaskDialog.Show("Ошибка материала", $"ID материала Inside недействителен.");
-                                //}
-                                // Конец назначения материала
+                                
                             }
                         }
                         TaskDialog.Show("Визуализация", $"Обработано точек внутри плит: {pointCountInside}");
                     }
 
-                    // Визуализация точек вне плит (например, красным цветом)
-                    //if (PointsOutsideFloors != null)
-                    //{
-                    //    TaskDialog.Show("Визуализация", $"Найдено точек вне плит: {PointsOutsideFloors.Count}");
-                    //    int pointCountOutside = 0;
-                    //    //foreach (var pointData in PointsOutsideFloors)
-                    //    //{
-                    //    //    // Получаем координаты точки в футах Revit API
-                    //    //    XYZ pointXYZ_ft = pointData.GetXYZ(ReinforcementInputWindow.METERS_TO_FEET);
-
-                    //    //    // Создаем сферу как геометрию для DirectShape
-                    //    //    double sphereRadius = 0.1;
-                    //    //    Sphere sphere = Sphere.Create(pointXYZ_ft, sphereRadius);
-                    //    //    List<GeometryObject> geometryObjects = new List<GeometryObject> { sphere };
-
-                    //    //    // Создаем DirectShape
-                    //    //    DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
-                    //    //    ds.SetShape(geometryObjects);
-                    //    //    ds.Name = $"Point_{pointData.Number}_Outside"; // Присваиваем имя для идентификации
-
-                    //    //    // Назначаем материал, если он найден или создан
-                    //    //    if (materialOutside != null)
-                    //    //    {
-                    //    //        ds.SetMaterialIds(new List<ElementId> { materialOutside.Id });
-                    //    //    }
-                    //    //}
-                    //    SolidOptions solidOptionsOutside = new SolidOptions(materialOutsideId, graphicsStyleId);
-
-                    //    foreach (var pointData in PointsOutsideFloors)
-                    //    {
-                    //        pointCountOutside++;
-                    //        // Получаем координаты точки в футах Revit API
-                    //        XYZ pointXYZ_ft = pointData.GetXYZ();
-
-                    //        // === Создание простой геометрии для визуализации (вместо Sphere) ===
-                    //        List<GeometryObject> geometryObjects = new List<GeometryObject>();
-                    //        double size = 1.0; // Размер элемента
-
-                    //        try
-                    //        {
-                    //            // Создаем BoundingBoxXYZ вокруг точки
-                    //            BoundingBoxXYZ bbox = new BoundingBoxXYZ();
-                    //            bbox.Min = pointXYZ_ft - new XYZ(size / 2, size / 2, size / 2);
-                    //            bbox.Max = pointXYZ_ft + new XYZ(size / 2, size / 2, size / 2);
-
-                    //            // Создаем Solid из BoundingBoxXYZ
-                    //            CurveLoop baseLoop = new CurveLoop();
-                    //            XYZ p0 = new XYZ(bbox.Min.X, bbox.Min.Y, bbox.Min.Z);
-                    //            XYZ p1 = new XYZ(bbox.Max.X, bbox.Min.Y, bbox.Min.Z);
-                    //            XYZ p2 = new XYZ(bbox.Max.X, bbox.Max.Y, bbox.Min.Z);
-                    //            XYZ p3 = new XYZ(bbox.Min.X, bbox.Max.Y, bbox.Min.Z);
-
-                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p0, p1));
-                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p1, p2));
-                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p2, p3));
-                    //            baseLoop.Append(Autodesk.Revit.DB.Line.CreateBound(p3, p0));
-
-                    //            List<CurveLoop> loops = new List<CurveLoop> { baseLoop };
-
-                    //            XYZ extrusionDir = new XYZ(0, 0, size);
-                    //            double extrusionDist = size;
-                    //            Solid solid = GeometryCreationUtilities.CreateExtrusionGeometry(loops, extrusionDir, extrusionDist, solidOptionsOutside);
-
-                    //            if (solid != null && solid.Volume > 0)
-                    //            {
-                    //                geometryObjects.Add(solid);
-                    //            }
-                    //            else
-                    //            {
-                    //                geometryObjects.Add(Autodesk.Revit.DB.Point.Create(pointXYZ_ft));
-                    //            }
-                    //        }
-                    //        catch (Exception geomEx)
-                    //        {
-                    //            System.Diagnostics.Debug.WriteLine($"Ошибка создания геометрии для точки {pointData.Number}: {geomEx.Message}");
-                    //            TaskDialog.Show("Ошибка геометрии", $"Ошибка создания геометрии для точки {pointData.Number}: {geomEx.Message}");
-                    //            //continue; // Пропускаем текущую точку
-                    //            geometryObjects = new List<GeometryObject>();
-                    //        }
-
-                    //        if (geometryObjects.Count == 0)
-                    //        {
-                    //            System.Diagnostics.Debug.WriteLine($"Не удалось создать геометрию для точки {pointData.Number}. Пропускаем.");
-                    //            //continue;
-                    //        }
-
-
-                    //        // Создаем DirectShape
-                    //        DirectShape ds = DirectShape.CreateElement(doc, modelCategoryId);
-                    //        ds.SetShape(geometryObjects);
-                    //        ds.Name = $"Point_{pointData.Number}_Outside"; // Присваиваем имя для идентификации
-
-                    //        //Parameter materialParam = ds.get_Parameter(BuiltInParameter.FAMILY_ELEM_SUBCATEGORY);
-                    //        //if (materialParam != null && materialInsideId != ElementId.InvalidElementId)
-                    //        //{
-                    //        //    //ds.SetMaterialIds(new List<ElementId> { materialOutside.Id });
-                    //        //    try
-                    //        //    {
-                    //        //        materialParam.Set(materialInsideId);
-                    //        //    }
-                    //        //    catch (Exception setParamEx)
-                    //        //    {
-                    //        //        TaskDialog.Show("Ошибка параметра", $"Ошибка установки параметра материала для точки {pointData.Number}: {setParamEx.Message}");
-                    //        //        System.Diagnostics.Debug.WriteLine($"Ошибка установки параметра материала для DirectShape: {setParamEx.Message}");
-                    //        //    }
-                    //        //}
-                    //        //else if (materialParam == null)
-                    //        //{
-                    //        //    System.Diagnostics.Debug.WriteLine($"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
-                    //        //    TaskDialog.Show("Ошибка параметра", $"Параметр FAMILY_ELEM_SUBCATEGORY не найден для DirectShape.");
-                    //        //}
-                    //        //else if (materialOutsideId == ElementId.InvalidElementId)
-                    //        //{
-                    //        //    System.Diagnostics.Debug.WriteLine($"ID материала Outside недействителен.");
-                    //        //    TaskDialog.Show("Ошибка материала", $"ID материала Outside недействителен.");
-                    //        //}
-                    //    }
-                    //    TaskDialog.Show("Визуализация", $"Обработано точек вне плит: {pointCountOutside}");
-                    //}
-
-                    //trans.Commit(); // Завершаем транзакцию
-                    //TaskDialog.Show("Визуализация", "Попытка завершить транзакцию.");
                     trans.Commit(); // Завершаем транзакцию
                     //TaskDialog.Show("Визуализация", "Транзакция завершена.");
                 }
@@ -1855,69 +1504,6 @@ namespace Diplom_Project // Ваш namespace
     }
 
 
-    public class PlanarVisualizationHandler : IExternalEventHandler // Определение класса
-    {
-        // TODO: Добавить поля для передачи данных из окна WPF (например, список зон или контуров)
-        // public List<ZoneSolution> ZonesToVisualize { get; set; }
-        // public List<CurveLoop> ZoneBoundaries { get; set; } // Возможно, передавать только контуры
-        // public ElementId TargetLevelId { get; set; } // ID уровня, на котором рисовать
-
-        public void Execute(UIApplication app)
-        {
-            // TODO: Реализовать логику 2D визуализации на плане в Revit API
-            // Получите Document и View (план этажа): Document doc = app.ActiveUIDocument.Document; ViewPlan planView = ...;
-            // Используйте Transaction для внесения изменений.
-            // Используйте GraphicsStyle для определения внешнего вида линий.
-            // Используйте Document.Create.NewDetailCurve() или NewModelCurve() для рисования контуров зон.
-
-            UIDocument uidoc = app.ActiveUIDocument;
-            Document doc = uidoc.Document;
-
-            // TODO: Получить активный вид или найти нужный план этажа
-            // View activeView = doc.ActiveView;
-            // if (!(activeView is ViewPlan))
-            // {
-            //     MessageBox.Show("Активный вид не является планом этажа. Визуализация на плане невозможна.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
-            //     return;
-            // }
-            // ViewPlan planView = activeView as ViewPlan;
-
-
-            // Пример: Создание транзакции
-            using (Transaction trans = new Transaction(doc, "Visualize Reinforcement Zones on Plan"))
-            {
-                trans.Start();
-
-                try
-                {
-                    // TODO: Здесь будет логика рисования контуров зон на плане
-                    // Например, для каждого контура в ZoneBoundaries:
-                    // foreach (CurveLoop loop in ZoneBoundaries)
-                    // {
-                    //     foreach (Curve curve in loop)
-                    //     {
-                    //         // Создание линии детализации
-                    //         doc.Create.NewDetailCurve(planView, curve);
-                    //     }
-                    // }
-
-                    System.Diagnostics.Debug.WriteLine("PlanarVisualizationHandler: Выполняется 2D визуализация на плане...");
-
-
-                    trans.Commit(); // Завершаем транзакцию
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"PlanarVisualizationHandler: Ошибка при выполнении 2D визуализации: {ex.Message}");
-                    trans.RollBack(); // Откатываем изменения при ошибке
-                }
-            }
-        }
-
-        public string GetName()
-        {
-            return "Reinforcement Zone Planar Visualization Handler";
-        }
-    }
+    
 
 } // Конец namespace
