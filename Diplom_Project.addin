@@ -9,10 +9,10 @@
 		<VendorDescription>Constructive</VendorDescription>
 		<AddInId>502fe383-2648-4e98-adf8-5e6047f9dc34</AddInId>-->
 
-		<Name>Application Diplom_Project</Name>
+		<Name>Application of additional reinforcement</Name>
 		<FullClassName>Diplom_Project.MainApp</FullClassName>
-		<Text>Hello World</Text>
-		<Description> Hello World Description</Description>
+		<Text>Плагин</Text>
+		<Description>Плагин для расчета зон дополнительного армирования</Description>
 		<VisibilityMode>AlwaysVisible</VisibilityMode>
 		<Assembly>
 			<!--Your .dll path location-->

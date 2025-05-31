@@ -28,6 +28,11 @@ namespace Diplom_Project
         /// </summary>
         public ElementId FloorId { get; set; } // TODO: Возможно, это поле не нужно, если зоны уже содержат ссылку на плиту или ее ID. Проверить необходимость.
 
+        /// <summary>
+        /// Список идентификаторов созданных линий детализации для последующей очистки.
+        /// </summary>
+        private List<ElementId> createdDetailCurveIds = new List<ElementId>();
+
         public void Execute(UIApplication app)
         {
             // Проверяем, что UIDocument доступен
@@ -65,6 +70,25 @@ namespace Diplom_Project
             // TODO: Реализовать очистку предыдущей визуализации перед рисованием новой
             // Возможно, CleanHandler должен уметь удалять DetailCurve, созданные этим обработчиком.
             // Или PlanarVisualizationHandler должен сам отслеживать и удалять свои предыдущие элементы.
+
+            if (createdDetailCurveIds.Any())
+            {
+                using (Transaction clearTrans = new Transaction(doc, "Clear Old Planar Visualization"))
+                {
+                    clearTrans.Start();
+                    try
+                    {
+                        doc.Delete(createdDetailCurveIds);
+                        createdDetailCurveIds.Clear();
+                        clearTrans.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Ошибка при очистке предыдущей 2D визуализации: {ex.Message}");
+                        clearTrans.RollBack();
+                    }
+                }
+            }
 
 
             // Пример: Создание транзакции для внесения изменений в модель

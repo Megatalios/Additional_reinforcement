@@ -148,7 +148,7 @@ namespace Diplom_Project // Ваш namespace
 
             // Изначально кнопки расчета и визуализации неактивны
             CalculateButton.IsEnabled = false;
-            ApplyButton.IsEnabled = false;
+            //ApplyButton.IsEnabled = false;
             PlanarButton.IsEnabled = false;
             CancelButton.IsEnabled = false;
 
@@ -209,7 +209,7 @@ namespace Diplom_Project // Ваш namespace
                 // Деактивируем UI на время загрузки
                 this.IsEnabled = false;
                 CalculateButton.IsEnabled = false; // Кнопка расчета неактивна
-                ApplyButton.IsEnabled = false;
+                //ApplyButton.IsEnabled = false;
                 PlanarButton.IsEnabled = false;
                 CancelButton.IsEnabled = false;
                 ZonesTable.Clear(); // Очищаем предыдущие результаты в таблице
@@ -283,7 +283,7 @@ namespace Diplom_Project // Ваш namespace
 
             // Деактивируем UI на время выполнения фильтрации и подготовки
             this.IsEnabled = false;
-            ApplyButton.IsEnabled = false;
+            //ApplyButton.IsEnabled = false;
             PlanarButton.IsEnabled = false;
             CancelButton.IsEnabled = false;
             ZonesTable.Clear(); // Очищаем предыдущие результаты в таблице
@@ -575,7 +575,7 @@ namespace Diplom_Project // Ваш namespace
                     // Активируем кнопки визуализации, если есть точки для отображения
                     if (totalPointsInsideFloors > 0 || totalPointsOutsideFloors > 0)
                     {
-                        ApplyButton.IsEnabled = true; // Применить (3D)
+                        //ApplyButton.IsEnabled = true; // Применить (3D)
                         PlanarButton.IsEnabled = true; // План (2D) - если планируется 2D виз.
                         CancelButton.IsEnabled = true; // Отменить виз.
                     }
@@ -742,7 +742,7 @@ namespace Diplom_Project // Ваш namespace
                 {
                     MessageBox.Show("Алгоритм оптимизации не нашел подходящих решений по зонированию.", "Результат расчета", MessageBoxButton.OK, MessageBoxImage.Information);
                     // Деактивируем кнопки визуализации, если решений нет
-                    ApplyButton.IsEnabled = false;
+                    //ApplyButton.IsEnabled = false;
                     PlanarButton.IsEnabled = false;
                     CancelButton.IsEnabled = false;
                 }
@@ -786,7 +786,7 @@ namespace Diplom_Project // Ваш namespace
                     }
 
                     // Активируем кнопки визуализации, если найдены решения
-                    ApplyButton.IsEnabled = true;
+                    //ApplyButton.IsEnabled = true;
                     PlanarButton.IsEnabled = true; // Активируем кнопку 2D визуализации
                     CancelButton.IsEnabled = true; // Активируем кнопку отмены визуализации
 
@@ -817,7 +817,7 @@ namespace Diplom_Project // Ваш namespace
                 // ConsoleLog.AppendText(Tools.CreateLogMessage(Tools.CalcErr + " '" + levelName + "'. Ошибка: " + ex.Message));
 
                 // Деактивируем кнопки визуализации при ошибке
-                ApplyButton.IsEnabled = false;
+                //ApplyButton.IsEnabled = false;
                 PlanarButton.IsEnabled = false;
                 CancelButton.IsEnabled = false;
                 ZonesTable.Clear(); // Очищаем таблицу результатов при ошибке
@@ -851,30 +851,75 @@ namespace Diplom_Project // Ваш namespace
         /// </summary>
         private void PlanarButton_Click(object sender, RoutedEventArgs e)
         {
-            // Проверяем, есть ли рассчитанные решения
-            if (bestSolutions == null || bestSolutions.Count == 0)
+            // 1. Проверяем, есть ли вообще рассчитанные решения
+            if (this.bestSolutions == null || this.bestSolutions.Count == 0)
             {
-                MessageBox.Show("Нет рассчитанных решений для визуализации.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Сначала выполните расчет для получения решений.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            // Выбираем лучшее решение (например, первое)
-            ReinforcementSolution bestSolution = bestSolutions.First();
+            // 2. Получаем выделенный элемент из DataGrid (SolutionsView)
+            object selectedItem = SolutionsView.SelectedItem; // SolutionsView - это имя вашего DataGrid в XAML
 
-            // Извлекаем ZoneSolution из лучшего решения
-            // Передаем список ZoneSolution, а не Zone, так как ZoneSolution содержит Bounds
-            List<ZoneSolution> zoneSolutionsToDraw = bestSolution.Zones; // Используем bestSolution.Zones
+            if (selectedItem == null)
+            {
+                MessageBox.Show("Пожалуйста, выделите решение в таблице для визуализации.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
 
-            // Обновляем список зон в обработчике 2D визуализации
+            // 3. Извлекаем DataRowView и получаем значение из колонки "Num"
+            DataRowView selectedRowView = selectedItem as DataRowView;
+            if (selectedRowView == null)
+            {
+                MessageBox.Show("Не удалось определить выделенное решение. Ошибка типа.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            int selectedSolutionNum;
+            try
+            {
+                // Убедитесь, что колонка "Num" действительно существует в вашей ZonesTable
+                // и содержит целые числа.
+                selectedSolutionNum = Convert.ToInt32(selectedRowView["Num"]);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Не удалось получить номер выделенного решения из таблицы: {ex.Message}", "Ошибка данных", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // 4. Находим соответствующее ReinforcementSolution в списке bestSolutions
+            ReinforcementSolution solutionToVisualize = this.bestSolutions.FirstOrDefault(sol => sol.Num == selectedSolutionNum);
+
+            if (solutionToVisualize == null)
+            {
+                MessageBox.Show($"Решение с номером {selectedSolutionNum} не найдено в списке рассчитанных решений.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // 5. Извлекаем ZoneSolution из выбранного решения для визуализации
+            List<ZoneSolution> zoneSolutionsToDraw = solutionToVisualize.Zones;
+
+            if (zoneSolutionsToDraw == null || zoneSolutionsToDraw.Count == 0)
+            {
+                MessageBox.Show($"Выбранное решение (№{selectedSolutionNum}) не содержит зон для визуализации.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // 6. Обновляем список зон в обработчике 2D визуализации
             planarVisualizationHandler.ZonesToVisualize = zoneSolutionsToDraw;
 
-            // ID плиты уже должен быть установлен в planarVisualizationHandler.FloorId
-            // после успешного расчета в CalculateButton_Click
+            // ID плиты (floorIdForCalculation) уже должен быть установлен в planarVisualizationHandler.FloorId
+            // после успешного расчета в CalculateButton_Click.
+            // Если это не так, или если для разных решений могут быть разные плиты (что маловероятно в вашей текущей логике),
+            // то здесь нужно было бы его также обновить.
+            // Предполагаем, что this.floors[0].Id или сохраненный floorIdForCalculation все еще актуален.
+            // Если вы оптимизируете для ОДНОЙ плиты за раз, то FloorId в planarVisualizationHandler должен быть уже корректно установлен.
 
-            // Вызываем External Event для выполнения 2D визуализации в Revit
+            // 7. Вызываем External Event для выполнения 2D визуализации в Revit
             planarVisualizationEvent.Raise();
 
-            System.Diagnostics.Debug.WriteLine("External Event для 2D визуализации вызван.");
+            System.Diagnostics.Debug.WriteLine($"External Event для 2D визуализации вызван для решения №{selectedSolutionNum}. Количество зон: {zoneSolutionsToDraw.Count}");
 
         }
 
@@ -890,8 +935,8 @@ namespace Diplom_Project // Ваш namespace
             cleanEvent.Raise();
 
             // Деактивируем кнопки визуализации после очистки
-            ApplyButton.IsEnabled = false;
-            PlanarButton.IsEnabled = false;
+            //ApplyButton.IsEnabled = false;
+            //PlanarButton.IsEnabled = false;
             CancelButton.IsEnabled = false;
 
             // MessageBox.Show("Логика отмены визуализации будет реализована здесь.", "Следующий шаг", MessageBoxButton.OK, MessageBoxImage.Information);

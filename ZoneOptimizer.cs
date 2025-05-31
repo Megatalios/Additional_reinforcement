@@ -11,8 +11,6 @@ namespace Diplom_Project
 {
     public class ZoneOptimizer
     {
-        // === Поля класса ZoneOptimizer (входные данные и настройки) ===
-
         /// <summary>
         /// Список доступных конфигураций арматуры.
         /// </summary>
@@ -44,11 +42,17 @@ namespace Diplom_Project
         // Параметр для начального размера зоны вокруг точки (в футах)
         private const double InitialZoneSize = 1.0; // 1.0 фут
 
+        /// <summary>
+        /// Коэффициент, определяющий "стоимость" или "выгоду" от уменьшения количества зон на одну.
+        /// Измеряется в тех же денежных единицах, что и Cost зон.
+        /// </summary>
+        public double ZoneReductionBenefitValue { get; set; } = 1500; // Значение по умолчанию 0 - только оптимизация по стоимости
+
         // Порог выгоды для необязательных слияний (если выгода меньше этого порога, слияние не происходит)
         //private const double MergeBenefitThreshold = 0.01; // Например, 1 копейка
 
 
-        // === Основной метод оптимизации ===
+        // === Основной метод оптимизации ===   
 
         /// <summary>
         /// Выполняет поиск N лучших решений по зонированию армирования.
@@ -77,9 +81,12 @@ namespace Diplom_Project
             foreach (var node in nodesForOptimization)
             {
                 Zone initialZone = new Zone(node, InitialZoneSize); // Создаем начальную зону из точки
+                //
                 // Для каждой начальной зоны сразу подбираем оптимальное арматурное решение
                 // Передаем ей доступные конфигурации арматуры, отверстия и контур плиты
                 initialZone.FindOptimalRebarSolution(AvailableRebars, Openings, PlateBoundary, BasicReinforcement); // TODO: Передавать Openings и PlateBoundary в Zone.FindOptimalRebarSolution
+
+               
 
                 // Проверяем, удалось ли найти решение для начальной зоны (если Cost не double.MaxValue)
                 if (initialZone.Cost < double.MaxValue)
@@ -97,6 +104,11 @@ namespace Diplom_Project
             {
                 System.Diagnostics.Debug.WriteLine("ZoneOptimizer: После инициализации нет активных зон.");
                 return allSolutions;
+            }
+
+            foreach (var zone in activeZones)
+            {
+                zone.CalculateCostAndLength(this.Openings, this.PlateBoundary);
             }
 
             // Добавляем начальное решение (все точки как отдельные зоны) в список лучших решений
@@ -192,85 +204,6 @@ namespace Diplom_Project
             return finalSolutions;
         }
 
-
-
-
-        //private (Zone zoneA, Zone zoneB, double benefit, bool isMandatory) FindBestMergeCandidate(List<Zone> activeZones)
-        //{
-        //    Zone bestZoneA = null;
-        //    Zone bestZoneB = null;
-        //    double maxBenefit = double.NegativeInfinity; // Ищем максимальную выгоду
-        //    bool foundMandatoryMerge = false; // Флаг для обязательного слияния
-
-        //    // Проходим по всем возможным парам зон
-        //    for (int i = 0; i < activeZones.Count; i++)
-        //    {
-        //        for (int j = i + 1; j < activeZones.Count; j++)
-        //        {
-        //            Zone zoneA = activeZones[i];
-        //            Zone zoneB = activeZones[j];
-
-        //            // 1. Геометрическая проверка: возможно ли объединение?
-        //            // Передаем отверстия и контур плиты
-        //            if (!zoneA.IsMergeGeometricallyPossible(zoneB, Openings, PlateBoundary)) // TODO: Передавать Openings и PlateBoundary
-        //            {
-        //                continue; // Если геометрически невозможно, пропускаем эту пару
-        //            }
-
-        //            // 2. Проверка на перекрытие (обязательное слияние)
-        //            // Проверяем, перекрываются ли BoundingBox'ы зон
-        //            //bool areOverlapping = zoneA.Bounds.IntersectsBox(zoneB.Bounds); // Используем метод IntersectsBox
-        //            bool areOverlapping =
-        //                zoneA.Bounds.Min.X <= zoneB.Bounds.Max.X && zoneA.Bounds.Max.X >= zoneB.Bounds.Min.X &&
-        //                zoneA.Bounds.Min.Y <= zoneB.Bounds.Max.Y && zoneA.Bounds.Max.Y >= zoneB.Bounds.Min.Y &&
-        //                zoneA.Bounds.Min.Z <= zoneB.Bounds.Max.Z && zoneA.Bounds.Max.Z >= zoneB.Bounds.Min.Z;
-
-        //            if (areOverlapping)
-        //            {
-        //                // Если перекрываются, это обязательное слияние.
-        //                // Присваиваем очень высокую выгоду, чтобы оно было выбрано с приоритетом.
-        //                // Точную выгоду для обязательного слияния можно рассчитать, но для приоритета достаточно большого числа.
-        //                double mandatoryBenefit = double.PositiveInfinity; // Очень большая выгода для обязательного слияния
-
-        //                // Если мы нашли обязательное слияние, ищем среди них лучшее (например, по количеству объединенных точек)
-        //                // Или просто берем первое найденное обязательное слияние на текущей итерации как "лучшее"
-        //                if (!foundMandatoryMerge) // Если это первое найденное обязательное слияние на этой итерации
-        //                {
-        //                    bestZoneA = zoneA;
-        //                    bestZoneB = zoneB;
-        //                    maxBenefit = mandatoryBenefit;
-        //                    foundMandatoryMerge = true;
-        //                }
-        //                // TODO: Если нужно выбирать лучшее среди обязательных, добавьте здесь логику сравнения (например, по количеству точек)
-
-        //                // Если мы уже нашли обязательное слияние, ищем только среди них.
-        //                // Если текущее слияние тоже обязательное, и оно "лучше" по какому-то критерию, обновляем bestCandidate.
-        //                // Пока просто берем первое найденное обязательное как лучшее на этой итерации.
-
-        //            }
-        //            else if (!foundMandatoryMerge) // Если нет обязательных слияний на этой итерации, ищем выгодное
-        //            {
-        //                // 3. Расчет выгоды по стоимости (для необязательных слияний)
-        //                // Передаем доступные конфигурации арматуры, отверстия и контур плиты
-        //                double currentBenefit = zoneA.CalculateMergeBenefit(zoneB, AvailableRebars, Openings, PlateBoundary); // TODO: Передавать AvailableRebars, Openings, PlateBoundary
-
-        //                // 4. Сравнение с максимальной найденной выгодой
-        //                if (currentBenefit > maxBenefit)
-        //                {
-        //                    maxBenefit = currentBenefit;
-        //                    bestZoneA = zoneA;
-        //                    bestZoneB = zoneB;
-        //                    foundMandatoryMerge = false; // Убеждаемся, что это не обязательное слияние
-        //                }
-        //            }
-        //        }
-        //    }
-
-        //    // Возвращаем найденного лучшего кандидата
-        //    return (bestZoneA, bestZoneB, maxBenefit, foundMandatoryMerge);
-        //}
-
-
         private (Zone zoneA, Zone zoneB, double benefit, bool isMandatory) FindBestMergeCandidate(List<Zone> activeZones)
         {
             Zone bestZoneA = null;
@@ -330,7 +263,7 @@ namespace Diplom_Project
                     {
                         // 3. Расчет выгоды по стоимости (для необязательных слияний)
                         // Передаем доступные конфигурации арматуры, отверстия, контур плиты И BASICREINFORCEMENTTHRESHOLDS!
-                        double currentBenefit = zoneA.CalculateMergeBenefit(zoneB, AvailableRebars, Openings, PlateBoundary, BasicReinforcement); // Передаем BasicReinforcement (поле класса Optimizer)
+                        double currentBenefit = zoneA.CalculateMergeBenefit(zoneB, AvailableRebars, Openings, PlateBoundary, BasicReinforcement, this.ZoneReductionBenefitValue); // Передаем BasicReinforcement (поле класса Optimizer)
 
                         // 4. Сравнение с максимальной найденной выгодой
                         if (currentBenefit > maxBenefit)

@@ -234,123 +234,197 @@ namespace Diplom_Project
         /// <param name="availableRebars">Список доступных конфигураций арматуры (RebarConfig).</param>
         /// <param name="openings">Список контуров отверстий в плите (в футах).</param>
         /// <param name="plateBoundary">Внешний контур плиты (в футах).</param>
-        public void FindOptimalRebarSolution(List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary)
+        //public void FindOptimalRebarSolution(List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary)
+        //{
+        //    // Инициализируем общую стоимость и длину зоны
+        //    this.Cost = 0;
+        //    this.Length = 0;
+
+        //    // Инициализируем массив подобранных конфигураций
+        //    this.OptimalRebarConfigs = new RebarConfig[4];
+
+        //    // Перебираем каждое из четырех направлений армирования
+        //    for (int directionIndex = 0; directionIndex < 4; directionIndex++)
+        //    {
+        //        // Проверяем, требуется ли армирование по данному направлению
+        //        // Если MaxRequiredLoad <= 0 или равно -1 (если направление не выбрано), пропускаем
+        //        if (MaxRequiredLoad[directionIndex] <= 0 || MaxRequiredLoad[directionIndex] == -1)
+        //        {
+        //            OptimalRebarConfigs[directionIndex] = null; // Явно указываем, что арматура по этому направлению не нужна
+        //            continue; // Переходим к следующему направлению
+        //        }
+
+        //        // Ищем лучшую конфигурацию арматуры для текущего направления
+        //        RebarConfig bestConfigForDirection = null;
+        //        double minCostForDirection = double.MaxValue; // Изначально ставим очень высокую стоимость
+
+        //        // Перебираем все доступные конфигурации арматуры
+        //        if (availableRebars != null)
+        //        {
+        //            foreach (var currentConfig in availableRebars)
+        //            {
+        //                // Проверяем, удовлетворяет ли выдерживаемая нагрузка конфигурации требуемой нагрузке зоны по данному направлению
+        //                // Предполагаем, что MaxRequiredLoad и BearingCapacity в одних единицах (кН/м²)
+        //                if (currentConfig.BearingCapacity >= MaxRequiredLoad[directionIndex])
+        //                {
+        //                    // Если конфигурация подходит, рассчитываем ее стоимость и длину для зоны
+        //                    (double currentCost, double calculatedLength) = CalculateRebarCostAndLengthForDirection(currentConfig, directionIndex, openings);
+
+        //                    // Сравниваем с текущей минимальной стоимостью для этого направления
+        //                    if (currentCost < minCostForDirection)
+        //                    {
+        //                        minCostForDirection = currentCost;
+        //                        bestConfigForDirection = currentConfig;
+        //                    }
+        //                }
+        //            }
+        //        }
+
+        //        // После перебора всех конфигураций, сохраняем лучшую для данного направления
+        //        OptimalRebarConfigs[directionIndex] = bestConfigForDirection;
+
+        //        // Если найдена подходящая конфигурация (bestConfigForDirection не null), добавляем ее стоимость и длину к общим
+        //        if (bestConfigForDirection != null)
+        //        {
+        //            // Пересчитываем стоимость и длину для найденной лучшей конфигурации
+        //            // (это нужно, потому что minCostForDirection и calculatedLength были рассчитаны внутри цикла)
+        //            (double finalCost, double finalLength) = CalculateRebarCostAndLengthForDirection(bestConfigForDirection, directionIndex, openings);
+
+        //            this.Cost += finalCost;
+        //            this.Length += finalLength;
+        //        }
+        //        else
+        //        {
+        //            // Если для данного направления не найдена ни одна подходящая конфигурация,
+        //            // это означает, что зона не может быть полностью армирована доступной арматурой.
+        //            // Присваиваем зоне очень высокую общую стоимость, чтобы она не считалась оптимальным решением.
+        //            System.Diagnostics.Debug.WriteLine($"Подбор арматуры: Для направления {directionIndex} зоны с точками {string.Join(",", Points.Select(p => p.Number))} не найдена подходящая конфигурация арматуры. Присвоена очень высокая стоимость.");
+        //            this.Cost = double.MaxValue;
+        //            this.Length = double.MaxValue; // Также присваиваем высокую длину (опционально)
+        //            // Можно прервать подбор для других направлений этой зоны, т.к. решение уже не будет полным
+        //            break;
+        //        }
+        //    }
+
+        //    System.Diagnostics.Debug.WriteLine($"Подбор арматуры: Для зоны с точками {string.Join(",", Points.Select(p => p.Number))}. Общая стоимость: {this.Cost:F2} руб, Общая длина: {this.Length:F2} футов.");
+        //}
+
+        public void FindOptimalRebarSolution(List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds)
         {
-            // Инициализируем общую стоимость и длину зоны
-            this.Cost = 0;
+            this.Cost = 0; // Начинаем с 0, будем суммировать
             this.Length = 0;
+            this.OptimalRebarConfigs = new RebarConfig[4]; // Сбрасываем предыдущие
 
-            // Инициализируем массив подобранных конфигураций
-            this.OptimalRebarConfigs = new RebarConfig[4];
+            if (availableRebars == null || availableRebars.Count == 0 || Bounds == null || basicReinforcementThresholds == null || basicReinforcementThresholds.Length != 4)
+            {
+                this.Cost = double.MaxValue; // Невозможно найти решение
+                System.Diagnostics.Debug.WriteLine("Zone.FindOptimalRebarSolution: Недостаточно входных данных.");
+                return;
+            }
 
-            // Перебираем каждое из четырех направлений армирования
             for (int directionIndex = 0; directionIndex < 4; directionIndex++)
             {
-                // Проверяем, требуется ли армирование по данному направлению
-                // Если MaxRequiredLoad <= 0 или равно -1 (если направление не выбрано), пропускаем
-                if (MaxRequiredLoad[directionIndex] <= 0 || MaxRequiredLoad[directionIndex] == -1)
+                double requiredLoadForDirection = MaxRequiredLoad[directionIndex];
+                double basicThreshold = basicReinforcementThresholds[directionIndex];
+
+                if (requiredLoadForDirection <= 0 || (basicThreshold != -1 && requiredLoadForDirection <= basicThreshold))
                 {
-                    OptimalRebarConfigs[directionIndex] = null; // Явно указываем, что арматура по этому направлению не нужна
-                    continue; // Переходим к следующему направлению
+                    OptimalRebarConfigs[directionIndex] = null;
+                    continue;
                 }
 
-                // Ищем лучшую конфигурацию арматуры для текущего направления
-                RebarConfig bestConfigForDirection = null;
-                double minCostForDirection = double.MaxValue; // Изначально ставим очень высокую стоимость
+                RebarConfig bestConfigForDir = null;
+                double minCostForDir = double.MaxValue;
 
-                // Перебираем все доступные конфигурации арматуры
-                if (availableRebars != null)
+                foreach (var currentConfig in availableRebars)
                 {
-                    foreach (var currentConfig in availableRebars)
+                    if (currentConfig.BearingCapacity >= requiredLoadForDirection)
                     {
-                        // Проверяем, удовлетворяет ли выдерживаемая нагрузка конфигурации требуемой нагрузке зоны по данному направлению
-                        // Предполагаем, что MaxRequiredLoad и BearingCapacity в одних единицах (кН/м²)
-                        if (currentConfig.BearingCapacity >= MaxRequiredLoad[directionIndex])
-                        {
-                            // Если конфигурация подходит, рассчитываем ее стоимость и длину для зоны
-                            (double currentCost, double calculatedLength) = CalculateRebarCostAndLengthForDirection(currentConfig, directionIndex, openings);
+                        // Рассчитываем стоимость только для ЭТОГО направления с ЭТОЙ конфигурацией
+                        // CalculateRebarCostAndLengthForDirection должен быть адаптирован,
+                        // чтобы считать стоимость для ОДНОГО направления, а не для всей зоны.
+                        // Или же вынести эту логику сюда.
+                        // Пока предположим, что CalculateRebarCostAndLengthForDirection считает для одного направления.
+                        (double currentDirectionCost, double currentDirectionLength) =
+                            CalculateRebarCostAndLengthForDirection(currentConfig, directionIndex, openings); // Этот метод у вас уже есть
 
-                            // Сравниваем с текущей минимальной стоимостью для этого направления
-                            if (currentCost < minCostForDirection)
-                            {
-                                minCostForDirection = currentCost;
-                                bestConfigForDirection = currentConfig;
-                            }
+                        if (currentDirectionCost < minCostForDir)
+                        {
+                            minCostForDir = currentDirectionCost;
+                            bestConfigForDir = currentConfig;
                         }
                     }
                 }
 
-                // После перебора всех конфигураций, сохраняем лучшую для данного направления
-                OptimalRebarConfigs[directionIndex] = bestConfigForDirection;
+                OptimalRebarConfigs[directionIndex] = bestConfigForDir;
 
-                // Если найдена подходящая конфигурация (bestConfigForDirection не null), добавляем ее стоимость и длину к общим
-                if (bestConfigForDirection != null)
+                if (bestConfigForDir != null)
                 {
-                    // Пересчитываем стоимость и длину для найденной лучшей конфигурации
-                    // (это нужно, потому что minCostForDirection и calculatedLength были рассчитаны внутри цикла)
-                    (double finalCost, double finalLength) = CalculateRebarCostAndLengthForDirection(bestConfigForDirection, directionIndex, openings);
-
-                    this.Cost += finalCost;
-                    this.Length += finalLength;
+                    // Если нашли лучшую конфигурацию, то ее стоимость уже minCostForDir
+                    // и ее длина была рассчитана вместе с currentDirectionCost.
+                    // Но CalculateRebarCostAndLengthForDirection возвращает и длину,
+                    // ее нужно где-то сохранить, если вы хотите суммировать общую длину по оптимальным конфигам.
+                    // Однако, обновление this.Cost и this.Length всей зоны лучше делать ОДИН РАЗ в конце,
+                    // вызвав this.CalculateCostAndLength(openings, plateBoundary);
                 }
                 else
                 {
-                    // Если для данного направления не найдена ни одна подходящая конфигурация,
-                    // это означает, что зона не может быть полностью армирована доступной арматурой.
-                    // Присваиваем зоне очень высокую общую стоимость, чтобы она не считалась оптимальным решением.
-                    System.Diagnostics.Debug.WriteLine($"Подбор арматуры: Для направления {directionIndex} зоны с точками {string.Join(",", Points.Select(p => p.Number))} не найдена подходящая конфигурация арматуры. Присвоена очень высокая стоимость.");
-                    this.Cost = double.MaxValue;
-                    this.Length = double.MaxValue; // Также присваиваем высокую длину (опционально)
-                    // Можно прервать подбор для других направлений этой зоны, т.к. решение уже не будет полным
-                    break;
+                    // Не найдена арматура для обязательного направления
+                    System.Diagnostics.Debug.WriteLine($"Zone.FindOptimalRebarSolution: Для направления {directionIndex} (требуемая нагрузка {requiredLoadForDirection:F2}) не найдена подходящая конфигурация.");
+                    this.Cost = double.MaxValue; // Делаем всю зону невалидной
+                    return; // Выходим, так как решение для зоны неполное
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"Подбор арматуры: Для зоны с точками {string.Join(",", Points.Select(p => p.Number))}. Общая стоимость: {this.Cost:F2} руб, Общая длина: {this.Length:F2} футов.");
-        }
-
-
-        public void FindOptimalRebarSolution(List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds)
-        {
-            // Сбрасываем предыдущее решение
-            Cost = 0; // Начинаем с 0, будем суммировать по направлениям
-            Length = 0; // Начинаем с 0
-            OptimalRebarConfigs = new RebarConfig[4]; // Сбрасываем массив конфигураций
-
-            // Проверяем входные данные
-            // Добавлена проверка basicReinforcementThresholds
-            if (availableRebars == null || availableRebars.Count == 0 || Bounds == null || basicReinforcementThresholds == null || basicReinforcementThresholds.Length != 4)
+            // После того как OptimalRebarConfigs заполнены для всех необходимых направлений,
+            // рассчитываем итоговую стоимость и длину всей зоны.
+            // Если мы дошли сюда, значит, для всех требуемых направлений была найдена арматура.
+            if (this.Cost != double.MaxValue) // Если зона не была помечена как невалидная
             {
-                Cost = double.MaxValue; // Невозможно найти решение без данных или границ
-                System.Diagnostics.Debug.WriteLine("Zone.FindOptimalRebarSolution: Недостаточно входных данных (availableRebars, Bounds, или basicReinforcementThresholds).");
-                return;
+                this.CalculateCostAndLength(openings, plateBoundary); // Обновляем Cost и Length на основе OptimalRebarConfigs
             }
-
-            // Итерируемся по каждому из 4 направлений армирования
-            for (int directionIndex = 0; directionIndex < 4; directionIndex++)
-            {
-                double requiredLoad = MaxRequiredLoad[directionIndex];
-                // Получаем порог для текущего направления из переданного массива
-                double basicThreshold = basicReinforcementThresholds[directionIndex];
-
-                // Если требуемая нагрузка по данному направлению <= 0, или она меньше или равна порогу основного армирования (если порог задан),
-                // дополнительное армирование не требуется
-                if (requiredLoad <= 0 || (basicThreshold != -1 && requiredLoad <= basicThreshold))
-                {
-                    OptimalRebarConfigs[directionIndex] = null; // Нет необходимости в арматуре по этому направлению
-                    continue; // Переходим к следующему направлению
-                }
-
-                // ... (остальная часть метода FindOptimalRebarSolution, включая расчет стоимости и длины)
-                // Убедитесь, что внутри этого метода вы также передаете basicReinforcementThresholds
-                // при вызове CalculateRebarCostAndLengthForDirection, если этот метод его требует.
-                // (В предоставленном мной коде CalculateRebarCostAndLengthForDirection не требует basicReinforcementThresholds напрямую,
-                // т.к. requiredLoad уже учитывает порог).
-
-                // ... (остальная часть метода FindOptimalRebarSolution)
-            }
-            // ... (конец метода FindOptimalRebarSolution)
         }
+        //public void FindOptimalRebarSolution(List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds)
+        //{
+        //    // Сбрасываем предыдущее решение
+        //    Cost = 0; // Начинаем с 0, будем суммировать по направлениям
+        //    Length = 0; // Начинаем с 0
+        //    OptimalRebarConfigs = new RebarConfig[4]; // Сбрасываем массив конфигураций
+
+        //    // Проверяем входные данные
+        //    // Добавлена проверка basicReinforcementThresholds
+        //    if (availableRebars == null || availableRebars.Count == 0 || Bounds == null || basicReinforcementThresholds == null || basicReinforcementThresholds.Length != 4)
+        //    {
+        //        Cost = double.MaxValue; // Невозможно найти решение без данных или границ
+        //        System.Diagnostics.Debug.WriteLine("Zone.FindOptimalRebarSolution: Недостаточно входных данных (availableRebars, Bounds, или basicReinforcementThresholds).");
+        //        return;
+        //    }
+
+        //    // Итерируемся по каждому из 4 направлений армирования
+        //    for (int directionIndex = 0; directionIndex < 4; directionIndex++)
+        //    {
+        //        double requiredLoad = MaxRequiredLoad[directionIndex];
+        //        // Получаем порог для текущего направления из переданного массива
+        //        double basicThreshold = basicReinforcementThresholds[directionIndex];
+
+        //        // Если требуемая нагрузка по данному направлению <= 0, или она меньше или равна порогу основного армирования (если порог задан),
+        //        // дополнительное армирование не требуется
+        //        if (requiredLoad <= 0 || (basicThreshold != -1 && requiredLoad <= basicThreshold))
+        //        {
+        //            OptimalRebarConfigs[directionIndex] = null; // Нет необходимости в арматуре по этому направлению
+        //            continue; // Переходим к следующему направлению
+        //        }
+
+        //        // ... (остальная часть метода FindOptimalRebarSolution, включая расчет стоимости и длины)
+        //        // Убедитесь, что внутри этого метода вы также передаете basicReinforcementThresholds
+        //        // при вызове CalculateRebarCostAndLengthForDirection, если этот метод его требует.
+        //        // (В предоставленном мной коде CalculateRebarCostAndLengthForDirection не требует basicReinforcementThresholds напрямую,
+        //        // т.к. requiredLoad уже учитывает порог).
+
+        //        // ... (остальная часть метода FindOptimalRebarSolution)
+        //    }
+        //    // ... (конец метода FindOptimalRebarSolution)
+        //}
         /// <summary>
         /// Метод для расчета "выгодности" объединения текущей зоны с другой зоной.
         /// Учитывает потенциальную экономию.
@@ -379,25 +453,77 @@ namespace Diplom_Project
         //    return mergeBenefit;
         //}
 
-        public double CalculateMergeBenefit(Zone otherZone, List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds) // Добавлен basicReinforcementThresholds в сигнатуру
+        //public double CalculateMergeBenefit(Zone otherZone, List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds) // Добавлен basicReinforcementThresholds в сигнатуру
+        //{
+        //    // 1. Создать временную объединенную зону (используя конструктор Zone(zoneA, zoneB)).
+        //    Zone potentialMergedZone = new Zone(this, otherZone);
+
+        //    // 2. Для временной зоны подобрать оптимальное арматурное решение, вызвав ее метод FindOptimalRebarSolution(...).
+        //    // Важно: FindOptimalRebarSolution обновит Cost и Length временной зоны
+        //    // ПЕРЕДАЕМ BASICREINFORCEMENTTHRESHOLDS!
+        //    potentialMergedZone.FindOptimalRebarSolution(availableRebars, openings, plateBoundary, basicReinforcementThresholds); // Передаем basicReinforcementThresholds
+
+        //    // 3. Рассчитать выгоду = (this.Cost + otherZone.Cost) - Стоимость временной зоны.
+        //    // Если FindOptimalRebarSolution вернул double.MaxValue (не найдено решение),
+        //    // то выгода будет отрицательной и очень большой, что правильно.
+        //    double mergeBenefit = (this.Cost + otherZone.Cost) - potentialMergedZone.Cost;
+
+        //    // Отладочный вывод (можно оставить или удалить)
+        //    System.Diagnostics.Debug.WriteLine($"Расчет выгоды: Объединение зон с точками {string.Join(",", this.Points.Select(p => p.Number))} и {string.Join(",", otherZone.Points.Select(p => p.Number))}. Выгода: {mergeBenefit:F2} руб.");
+
+        //    return mergeBenefit;
+        //}
+        public double CalculateMergeBenefit(Zone otherZone, List<RebarConfig> availableRebars, List<CurveLoop> openings, CurveLoop plateBoundary, double[] basicReinforcementThresholds, double zoneReductionBenefitFactor)
         {
-            // 1. Создать временную объединенную зону (используя конструктор Zone(zoneA, zoneB)).
+            // 1. Создать временную объединенную зону.
             Zone potentialMergedZone = new Zone(this, otherZone);
 
-            // 2. Для временной зоны подобрать оптимальное арматурное решение, вызвав ее метод FindOptimalRebarSolution(...).
-            // Важно: FindOptimalRebarSolution обновит Cost и Length временной зоны
-            // ПЕРЕДАЕМ BASICREINFORCEMENTTHRESHOLDS!
-            potentialMergedZone.FindOptimalRebarSolution(availableRebars, openings, plateBoundary, basicReinforcementThresholds); // Передаем basicReinforcementThresholds
+            // 2. Для временной зоны подобрать оптимальное арматурное решение.
+            potentialMergedZone.FindOptimalRebarSolution(availableRebars, openings, plateBoundary, basicReinforcementThresholds);
 
-            // 3. Рассчитать выгоду = (this.Cost + otherZone.Cost) - Стоимость временной зоны.
-            // Если FindOptimalRebarSolution вернул double.MaxValue (не найдено решение),
-            // то выгода будет отрицательной и очень большой, что правильно.
-            double mergeBenefit = (this.Cost + otherZone.Cost) - potentialMergedZone.Cost;
 
-            // Отладочный вывод (можно оставить или удалить)
-            System.Diagnostics.Debug.WriteLine($"Расчет выгоды: Объединение зон с точками {string.Join(",", this.Points.Select(p => p.Number))} и {string.Join(",", otherZone.Points.Select(p => p.Number))}. Выгода: {mergeBenefit:F2} руб.");
 
-            return mergeBenefit;
+            // 3. Рассчитать стоимость и длину для объединенной зоны на основе подобранной арматуры.
+            // Убедитесь, что CalculateCostAndLength корректно вызывается внутри FindOptimalRebarSolution
+            // или вызовите его здесь явно, если это не так.
+            // Сейчас, судя по коду ZoneOptimizer, CalculateCostAndLength вызывается для initialZone,
+            // но неясно, вызывается ли он для mergedZone после FindOptimalRebarSolution.
+            // Давайте для надежности вызовем его здесь, если FindOptimalRebarSolution его не вызывает для обновления Cost.
+            // Однако, если FindOptimalRebarSolution уже обновляет Cost, этот вызов может быть избыточен.
+            // В вашем Zone.FindOptimalRebarSolution метод CalculateCostAndLength не вызывается.
+            // А в ZoneOptimizer.FindBestReinforcementSolutions CalculateCostAndLength вызывается для initialZone, но не для mergedZone.
+            // Это значит, что Cost у mergedZone после FindOptimalRebarSolution может быть неактуальным.
+
+            // Для корректного расчета выгоды, убедимся, что Cost для всех зон актуален.
+            // Предполагаем, что this.Cost и otherZone.Cost уже актуальны.
+            // Для potentialMergedZone нужно обновить Cost после FindOptimalRebarSolution.
+            // Это должно делаться либо в FindOptimalRebarSolution, либо здесь.
+            // Судя по вашему коду Zone.cs, FindOptimalRebarSolution не вызывает CalculateCostAndLength.
+            // А CalculateCostAndLength обновляет this.Cost.
+
+            // !!! ВАЖНО: FindOptimalRebarSolution должен обновить this.Cost и this.Length зоны, для которой он вызван,
+            // либо его нужно вызывать из CalculateCostAndLength.
+            // Давайте предположим, что FindOptimalRebarSolution обновил this.Cost для potentialMergedZone
+            // (Если это не так, его нужно доработать или вызывать CalculateCostAndLength здесь)
+
+            // Пересчитаем стоимость для объединенной зоны, чтобы быть уверенными
+            potentialMergedZone.CalculateCostAndLength(openings, plateBoundary); // Это обновит potentialMergedZone.Cost и .Length
+
+            double costBenefit = (this.Cost + otherZone.Cost) - potentialMergedZone.Cost;
+
+            // Выгода от уменьшения количества зон (уменьшаем на 1 зону)
+            // Если zoneReductionBenefitFactor = 0, то учитывается только выгода по стоимости.
+            double totalBenefit = costBenefit + zoneReductionBenefitFactor;
+
+            System.Diagnostics.Debug.WriteLine(
+                $"Расчет выгоды для объединения зон (точки: {string.Join(",", this.Points.Select(p => p.Number))} и {string.Join(",", otherZone.Points.Select(p => p.Number))}): " +
+                $"Cost_A={this.Cost:F2}, Cost_B={otherZone.Cost:F2}, Cost_Merged={potentialMergedZone.Cost:F2}. " +
+                $"Выгода по стоимости: {costBenefit:F2} руб. " +
+                $"Бонус за сокращение зон: {zoneReductionBenefitFactor:F2}. " +
+                $"Общая выгода: {totalBenefit:F2} руб."
+            );
+
+            return totalBenefit;
         }
 
 
@@ -695,6 +821,101 @@ namespace Diplom_Project
 
 
             return (totalCost, totalLengthWithOpenings_ft);
+        }
+
+
+        public void CalculateCostAndLength(List<CurveLoop> openings, CurveLoop plateBoundary)
+        {
+            // Сбрасываем предыдущие значения
+            Cost = 0;
+            Length = 0;
+
+            // Проверяем наличие необходимых данных
+            // OptimalRebarConfigs должен быть массивом из 4 элементов, даже если некоторые null
+            if (Bounds == null || OptimalRebarConfigs == null || OptimalRebarConfigs.Length != 4 || MaxRequiredLoad == null || MaxRequiredLoad.Length != 4)
+            {
+                System.Diagnostics.Debug.WriteLine($"Zone: Невозможно рассчитать стоимость/длину для зоны из-за отсутствия Bounds, OptimalRebarConfigs (или не 4 элемента) или MaxRequiredLoad.");
+                return;
+            }
+
+            // Получаем размеры зоны из Bounds в футах
+            double dx = Bounds.Max.X - Bounds.Min.X;
+            double dy = Bounds.Max.Y - Bounds.Min.Y;
+
+            // Перебираем каждое из четырех направлений армирования
+            // Индексы: 0 - As1X, 1 - As2X, 2 - As3Y, 3 - As4Y
+            for (int i = 0; i < 4; i++)
+            {
+                RebarConfig rebarConfig = OptimalRebarConfigs[i];
+                double requiredLoad = MaxRequiredLoad[i];
+
+                // Проверяем, требуется ли армирование по данному направлению (нагрузка > 0)
+                // и определена ли оптимальная конфигурация
+                if (rebarConfig != null && requiredLoad > 0)
+                {
+                    double lengthOfRebar_ft;     // Длина отдельного стержня в этом направлении (в футах)
+                    double widthForSpacing_ft;   // Размер зоны перпендикулярно направлению армирования (для расчета количества стержней) (в футах)
+
+                    // Определяем размеры в зависимости от направления
+                    if (i == 0 || i == 1) // Направления X (As1X, As2X)
+                    {
+                        lengthOfRebar_ft = dx;
+                        widthForSpacing_ft = dy;
+                    }
+                    else // Направления Y (As3Y, As4Y)
+                    {
+                        lengthOfRebar_ft = dy;
+                        widthForSpacing_ft = dx;
+                    }
+
+                    // Получаем шаг армирования в футах (предполагаем, что RebarConfig.Spacing в мм)
+                    double spacing_mm = rebarConfig.Spacing;
+                    // Используем UnitTypeId.Millimeters для Revit API 2021+
+                    double spacing_ft = UnitUtils.ConvertToInternalUnits(spacing_mm, UnitTypeId.Millimeters);
+
+                    // Проверка на нулевой или отрицательный шаг, чтобы избежать деления на ноль
+                    if (spacing_ft <= 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Zone: Некорректный шаг армирования ({spacing_mm} мм) для конфигурации {rebarConfig.Name} в направлении {i}. Расчет пропущен.");
+                        continue; // Пропускаем это направление
+                    }
+
+
+                    // Рассчитываем количество стержней. Округляем вверх, чтобы покрыть всю ширину.
+                    // Добавляем небольшое эпсилон для учета погрешностей вычислений с плавающей точкой.
+                    int numberOfRebars = (int)Math.Ceiling(widthForSpacing_ft / spacing_ft + 1e-9);
+
+                    // TODO: Учет отверстий.
+                    // Это сложная часть. Необходимо определить, какие части стержней
+                    // попадают в отверстия и вычесть их длину.
+                    // На данном этапе для упрощения будем использовать полную длину стержня.
+                    // В реальном проекте здесь потребуется более сложная геометрическая логика
+                    // для пересечения линий арматуры с контурами отверстий.
+                    double totalLengthForDirection_ft = numberOfRebars * lengthOfRebar_ft;
+
+                    // Получаем стоимость за фут (предполагаем, что RebarConfig.CostPerMeter в руб/м)
+                    double costPerMeter = rebarConfig.CostPerMeter;
+                    // Конвертируем руб/м в руб/фут (1 фут = 0.3048 м)
+                    double costPerFoot = costPerMeter * 0.3048; // 1 метр = ~3.28 фута, 1 фут = ~0.3048 метра
+
+
+                    // Рассчитываем стоимость арматуры для данного направления (в рублях)
+                    double costForDirection = totalLengthForDirection_ft * costPerFoot;
+
+                    // Добавляем к общей стоимости и длине зоны
+                    Cost += costForDirection;
+                    Length += totalLengthForDirection_ft; // Суммируем длины по всем направлениям
+                                                          // (это общая погонная длина всей арматуры в зоне)
+
+                    System.Diagnostics.Debug.WriteLine($"Zone: Расчет для направления {i}. Конфигурация: {rebarConfig.Name} (D={rebarConfig.Diameter}, S={rebarConfig.Spacing}). Треб. нагрузка: {requiredLoad:F2}. Длина стержня: {lengthOfRebar_ft:F2} футов. Ширина для шага: {widthForSpacing_ft:F2} футов. Шаг (футы): {spacing_ft:F4}. Стержней: {numberOfRebars}. Длина направления: {totalLengthForDirection_ft:F2} футов. Стоимость направления: {costForDirection:F2} руб.");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Zone: Направление {i} пропущено. RebarConfig: {rebarConfig?.Name ?? "null"}, Треб. нагрузка: {requiredLoad:F2}.");
+                }
+            }
+
+            System.Diagnostics.Debug.WriteLine($"Zone: Общая рассчитанная Стоимость: {Cost:F2} руб, Общая Длина: {Length:F2} футов.");
         }
 
 
